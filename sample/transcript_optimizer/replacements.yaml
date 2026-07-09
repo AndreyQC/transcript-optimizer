@@ -1,42 +1,60 @@
+# Замены строковых фрагментов и лемматизационные замены = глоссарий проекта.
+# replacements: точное (строковое) совпадение from -> to.
+# lemma_replacements: замена по лемме слова (from_lemmas -> to).
+# Ключи replacement_rule_NNN / lemma_rule_NNN — уникальные, нумерация сквозная.
+# label — ОБЯЗАТЕЛЕН, хранит id категории из glossary.yaml.
+# description — опционально (определение термина); пайплайном очистки игнорируется.
 replacements:
   replacement_rule_001:
     to: Minimax
-    label: LLM vendor
+    label: brand_product
+    description: Китайский провайдер LLM
     from:
     - мини Макс
     - минимакс
     - mini max
   replacement_rule_002:
     to: OpenCode
+    label: brand_product
+    description: IDE/инструмент разработки
     from:
     - опен код
     - open code
   replacement_rule_003:
     to: дашборд
+    label: tech_term
+    description: Визуальная панель с метриками
     from:
     - джем борд
     - джемборд
   replacement_rule_004:
     to: Саммари
+    label: linguistic
     from:
     - Самри
   replacement_rule_005:
     to: JIRA
+    label: brand_product
+    description: Система отслеживания задач (Atlassian)
     from:
     - жире
     - джира
 lemma_replacements:
   lemma_rule_001:
     to: Slack
+    label: brand_product
+    description: Корпоративный мессенджер
     from_lemmas:
     - слак
   lemma_rule_002:
     to: команда вега
+    label: team
     from_lemmas:
     - вег
   lemma_rule_003:
     to: дашборд
+    label: tech_term
+    description: Визуальная панель с метриками
     from_lemmas:
     - джем
     - борд
-

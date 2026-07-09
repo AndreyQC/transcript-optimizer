@@ -1,0 +1,5 @@
+settings:
+  aggressive_clean: false
+  similarity_threshold: 0.65
+  min_word_len: 3
+  suggestions_header: true

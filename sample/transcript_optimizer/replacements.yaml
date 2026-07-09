@@ -1,0 +1,42 @@
+replacements:
+  replacement_rule_001:
+    to: Minimax
+    label: LLM vendor
+    from:
+    - мини Макс
+    - минимакс
+    - mini max
+  replacement_rule_002:
+    to: OpenCode
+    from:
+    - опен код
+    - open code
+  replacement_rule_003:
+    to: дашборд
+    from:
+    - джем борд
+    - джемборд
+  replacement_rule_004:
+    to: Саммари
+    from:
+    - Самри
+  replacement_rule_005:
+    to: JIRA
+    from:
+    - жире
+    - джира
+lemma_replacements:
+  lemma_rule_001:
+    to: Slack
+    from_lemmas:
+    - слак
+  lemma_rule_002:
+    to: команда вега
+    from_lemmas:
+    - вег
+  lemma_rule_003:
+    to: дашборд
+    from_lemmas:
+    - джем
+    - борд
+

@@ -49,3 +49,19 @@ export const useDictionaries = create<DictionariesState>((set) => ({
       ),
     })),
 }));
+
+// Производный селектор: множество id категорий из glossary.yaml.
+// Используется валидатором replacements для проверки label ∈ glossary.
+export function selectGlossaryCategories(
+  state: DictionariesState,
+): Set<string> {
+  const cats = new Set<string>();
+  const glossary = state.entries.find((e) => e.kind === "glossary");
+  if (glossary && glossary.data && typeof glossary.data === "object") {
+    const categories = (glossary.data as { categories?: Record<string, unknown> }).categories;
+    if (categories && typeof categories === "object") {
+      for (const id of Object.keys(categories)) cats.add(id);
+    }
+  }
+  return cats;
+}

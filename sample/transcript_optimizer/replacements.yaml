@@ -51,10 +51,3 @@ lemma_replacements:
     label: team
     from_lemmas:
     - вег
-  lemma_rule_003:
-    to: дашборд
-    label: tech_term
-    description: Визуальная панель с метриками
-    from_lemmas:
-    - джем
-    - борд

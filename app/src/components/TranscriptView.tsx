@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useTranscript } from "../store/transcript";
 import { useDictionaries } from "../store/dictionaries";
 import { applyRules } from "../engine/rules";
@@ -55,8 +56,15 @@ function StatsPanel() {
   async function handleExport() {
     try {
       const md = exportStatsMarkdown(cleanResult!);
-      await writeFile("stats-export.md", md);
-      setStatus("Экспортировано: stats-export.md");
+      // Диалог сохранения: пользователь выбирает абсолютный путь.
+      // Это решает Tauri FS scope (нельзя писать по относительному пути).
+      const path = await save({
+        defaultPath: "stats-export.md",
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (!path) return; // отмена
+      await writeFile(path, md);
+      setStatus(`Экспортировано: ${path}`);
     } catch (e) {
       setStatus(`Ошибка экспорта: ${String(e)}`);
     }

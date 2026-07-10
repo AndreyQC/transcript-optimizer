@@ -140,6 +140,29 @@ body {
   font-weight: 600;
 }
 
+.edit-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.btn-undo {
+  background-color: #3a3d41;
+  color: #d4d4d4;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.btn-undo:hover:not(:disabled) {
+  background-color: #4a4d51;
+}
+
+.btn-undo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .edit-panel h4 {
   margin: 14px 0 6px 0;
   font-size: 12px;

@@ -56,12 +56,22 @@ export function EditPanel() {
     s.entries.find((e) => e.kind === activeKind),
   );
   const applyEdit = useDictionaries((s) => s.applyEdit);
+  const undoFn = useDictionaries((s) => s.undo);
+  const canUndo = useDictionaries((s) =>
+    activeKind ? (s.undoState.stacks[activeKind] ?? []).length > 0 : false,
+  );
   const cats = useDictionaries(selectGlossaryCategories);
 
   const [form, setForm] = useState<FormState>(empty);
   const [pending, setPending] = useState<string | null>(null); // превью нового raw
   const [pendingBefore, setPendingBefore] = useState<string>("");
   const [err, setErr] = useState<string>("");
+
+  function handleUndo() {
+    if (!activeKind) return;
+    const ok = undoFn(activeKind);
+    if (!ok) setErr("Нечего отменять");
+  }
 
   // Список существующих записей для удаления (упрощённо: только replacements/glossary).
   const existingKeys = useMemo<string[]>(() => {
@@ -156,7 +166,17 @@ export function EditPanel() {
 
   return (
     <aside className="edit-panel">
-      <h3>Правка словаря</h3>
+      <div className="edit-panel-header">
+        <h3>Правка словаря</h3>
+        <button
+          onClick={handleUndo}
+          className="btn-mini btn-undo"
+          disabled={!canUndo}
+          title="Отменить последнюю структурную правку"
+        >
+          ↶ Undo
+        </button>
+      </div>
       {err && <div className="edit-err">{err}</div>}
 
       {showForm && (

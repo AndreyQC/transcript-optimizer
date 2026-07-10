@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { parse } from "yaml";
 import type { DictEntry, DictKind } from "../types/dictionaries";
 
 interface DictionariesState {
@@ -12,6 +13,8 @@ interface DictionariesState {
   setActive: (kind: DictKind) => void;
   // Обновить raw и флаг dirty при правке в Monaco.
   editRaw: (kind: DictKind, raw: string) => void;
+  // Применить AST-правку (изменённый raw) + пере-парсить data.
+  applyEdit: (kind: DictKind, raw: string) => void;
   // Пометить файл сохранённым (dirty=false) после записи на диск.
   markSaved: (kind: DictKind, raw: string) => void;
 }
@@ -47,6 +50,20 @@ export const useDictionaries = create<DictionariesState>((set) => ({
       entries: state.entries.map((e) =>
         e.kind === kind ? { ...e, raw, dirty: false } : e,
       ),
+    })),
+  // Применить AST-правку: заменить raw + пере-парсить data, поставить dirty.
+  applyEdit: (kind, raw) =>
+    set((state) => ({
+      entries: state.entries.map((e) => {
+        if (e.kind !== kind) return e;
+        let data: unknown = e.data;
+        try {
+          data = parse(raw);
+        } catch {
+          // невалидный результат правки — оставляем старый data
+        }
+        return { ...e, raw, data, dirty: true };
+      }),
     })),
 }));
 

@@ -111,3 +111,141 @@ body {
   height: 100%;
   color: #9d9d9d;
 }
+
+/* Главная область: редактор + панель правки */
+.main-pane {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.main-pane .editor-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Панель правки (формы добавления/удаления) */
+.edit-panel {
+  flex: 0 0 360px;
+  background-color: #252526;
+  border-left: 1px solid #3c3c3c;
+  padding: 10px 12px;
+  overflow-y: auto;
+  color: #e6e6e6;
+}
+
+.edit-panel h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.edit-panel h4 {
+  margin: 14px 0 6px 0;
+  font-size: 12px;
+  color: #9d9d9d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #c4c4c4;
+}
+
+.edit-form input,
+.edit-form select {
+  background-color: #3c3c3c;
+  border: 1px solid #555;
+  color: #e6e6e6;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 2px;
+}
+
+.edit-form input[type="checkbox"] {
+  width: auto;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.edit-err {
+  background-color: #5a1d1d;
+  color: #ffb4b4;
+  padding: 6px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.edit-diff pre {
+  background-color: #1e1e1e;
+  padding: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #3c3c3c;
+}
+
+.diff-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: "Consolas", "Menlo", monospace;
+  line-height: 1.4;
+}
+
+.diff-line.diff-plus,
+.diff-line.diff-\+ {
+  background-color: #2d4a2d;
+  color: #9bd89b;
+}
+
+.diff-line.diff-minus,
+.diff-line.diff\- {
+  background-color: #4a2d2d;
+  color: #d89b9b;
+}
+
+.edit-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.edit-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12px;
+  font-family: "Consolas", "Menlo", monospace;
+}
+
+.btn-mini {
+  border: none;
+  background-color: #5a1d1d;
+  color: #ffb4b4;
+  cursor: pointer;
+  padding: 1px 7px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.btn-mini:hover {
+  background-color: #7a2424;
+}

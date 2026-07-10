@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDictionaries, selectGlossaryCategories } from "../store/dictionaries";
+import { useDictionaries, getGlossaryCategories } from "../store/dictionaries";
 import {
   addEntry,
   deleteEntry,
@@ -60,7 +60,9 @@ export function EditPanel() {
   const canUndo = useDictionaries((s) =>
     activeKind ? (s.undoState.stacks[activeKind] ?? []).length > 0 : false,
   );
-  const cats = useDictionaries(selectGlossaryCategories);
+  // Set категорий вычисляем в useMemo (селектор с новым Set ломает ре-рендер).
+  const entries = useDictionaries((s) => s.entries);
+  const cats = useMemo(() => getGlossaryCategories(entries), [entries]);
 
   const [form, setForm] = useState<FormState>(empty);
   const [pending, setPending] = useState<string | null>(null); // превью нового raw

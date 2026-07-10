@@ -147,11 +147,12 @@ export function selectHasUnsaved(state: DictionariesState): boolean {
   return state.entries.some((e) => e.dirty);
 }
 
-// Производный селектор: множество id категорий из glossary.yaml.
-// Используется валидатором replacements для проверки label ∈ glossary.
-export function selectGlossaryCategories(state: DictionariesState): Set<string> {
+// Множество id категорий из glossary.yaml. Это НЕ селектор zustand (возвращает
+// новый Set при каждом вызове — нельзя подписывать через useDictionaries, иначе
+// бесконечный ре-рендер). Компоненты зовут это в useMemo от уже подписанных entries.
+export function getGlossaryCategories(entries: DictEntry[]): Set<string> {
   const cats = new Set<string>();
-  const glossary = state.entries.find((e) => e.kind === "glossary");
+  const glossary = entries.find((e) => e.kind === "glossary");
   if (glossary && glossary.data && typeof glossary.data === "object") {
     const categories = (glossary.data as { categories?: Record<string, unknown> }).categories;
     if (categories && typeof categories === "object") {

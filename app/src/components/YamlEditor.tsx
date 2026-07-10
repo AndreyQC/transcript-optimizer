@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { useDictionaries, selectGlossaryCategories } from "../store/dictionaries";
+import { useDictionaries, getGlossaryCategories } from "../store/dictionaries";
 import { validateDictionary } from "../lib/validate";
 
 // MarkerSeverity в Monaco: Error=8, Warning=4. Числовые константы используем
@@ -26,7 +26,11 @@ export function YamlEditor() {
     s.entries.find((e) => e.kind === activeKind),
   );
   const editRaw = useDictionaries((s) => s.editRaw);
-  const glossaryCats = useDictionaries(selectGlossaryCategories);
+  // Подписываемся на entries (стабильная ссылка массива), а Set категорий
+  // вычисляем в useMemo — иначе селектор, возвращающий новый Set каждый раз,
+  // вызывает бесконечный ре-рендер (Maximum update depth exceeded).
+  const entries = useDictionaries((s) => s.entries);
+  const glossaryCats = useMemo(() => getGlossaryCategories(entries), [entries]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);

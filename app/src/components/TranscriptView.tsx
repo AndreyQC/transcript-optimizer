@@ -120,6 +120,8 @@ export function TranscriptView() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const origEditorRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cleanEditorRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const monacoRef = useRef<any>(null);
   const decosRef = useRef<string[]>([]);
   const [applying, setApplying] = useState(false);
@@ -141,6 +143,11 @@ export function TranscriptView() {
       })();
   }, []);
 
+  const onCleanMount: OnMount = useCallback((ed, monaco) => {
+    cleanEditorRef.current = ed;
+    if (!monacoRef.current) monacoRef.current = monaco;
+  }, []);
+
   // Применить decorations при изменении cleanResult.
   useEffect(() => {
     const ed = origEditorRef.current;
@@ -159,6 +166,41 @@ export function TranscriptView() {
       setApplying(false);
     }
   }, [transcript, settings, filler, replacements, whitelist, setCleanResult]);
+
+  // Синхронизация по таймштампу: берём строку под курсором в активной панели,
+  // находим её таймштамп, подскролливаем вторую панель к той же реплике.
+  const handleSync = useCallback(() => {
+    if (!transcript || !cleanResult) return;
+    const origEd = origEditorRef.current;
+    const cleanEd = cleanEditorRef.current;
+    if (!origEd || !cleanEd) return;
+
+    // Какая панель активна? Та, где курсор (фокус). По умолчанию — оригинал.
+    const origPos = origEd.getPosition();
+    const cleanPos = cleanEd.getPosition();
+    const focusClean = cleanEd.hasTextFocus();
+    const srcLine = (focusClean ? cleanPos : origPos)?.lineNumber;
+    if (!srcLine) return;
+
+    // Time строки-источника: в оригинале — по parsed (lineNo реплики);
+    // в очищенном — парсим cleanedText на лету.
+    let srcTime: string | null = null;
+    if (focusClean) {
+      srcTime = timeAtLine(cleanResult.cleanedText, srcLine);
+    } else {
+      srcTime = timeAtParsedLine(transcript.parsed, srcLine);
+    }
+    if (!srcTime) return;
+
+    // Целевая панель: найти строку с тем же time.
+    if (focusClean) {
+      const targetLine = parsedLineForTime(transcript.parsed, srcTime);
+      if (targetLine != null) origEd.revealLineInCenter(targetLine);
+    } else {
+      const targetLine = lineForTime(cleanResult.cleanedText, srcTime);
+      if (targetLine != null) cleanEd.revealLineInCenter(targetLine);
+    }
+  }, [transcript, cleanResult]);
 
   // Команда «Очистить» доступна через window-событие от Toolbar (упрощённо:
   // Toolbar вызывает applyRules напрямую через свой обработчик). Здесь кнопка
@@ -196,9 +238,14 @@ export function TranscriptView() {
         <div className="transcript-pane">
           <div className="pane-header">
             Очищенный
-            <button onClick={handleClean} className="btn-mini" disabled={applying}>
-              {applying ? "Очистка..." : "Очистить"}
-            </button>
+            <span className="pane-actions">
+              <button onClick={handleClean} className="btn-mini" disabled={applying}>
+                {applying ? "Очистка..." : "Очистить"}
+              </button>
+              <button onClick={handleSync} className="btn-mini" disabled={!cleanResult} title="Подскроллить вторую панель к той же реплике по таймштампу">
+                ⇆ Синхронизировать
+              </button>
+            </span>
           </div>
           <Editor
             height="100%"
@@ -206,6 +253,7 @@ export function TranscriptView() {
             theme="vs-dark"
             path={transcript.path + "#clean"}
             value={cleanResult?.cleanedText ?? ""}
+            onMount={onCleanMount}
             options={{
               readOnly: true,
               minimap: { enabled: false },
@@ -220,4 +268,52 @@ export function TranscriptView() {
       <StatsPanel />
     </div>
   );
+}
+
+// --- helpers для синхронизации по таймштампу --------------------------------
+
+const RE_TIME_LINE = /^\[(\d{2}:\d{2}:\d{2})\]/;
+
+// Найти таймштамп реплики, которой принадлежит строка lineNo (1-based),
+// в распарсенном оригинале. Идём по utterances, берём ближайший <= lineNo.
+function timeAtParsedLine(parsed: { blocks: { utterances: { lineNo: number; time: string }[] }[] }, lineNo: number): string | null {
+  let best: string | null = null;
+  for (const b of parsed.blocks) {
+    for (const u of b.utterances) {
+      if (u.lineNo <= lineNo) best = u.time;
+      else break;
+    }
+  }
+  return best;
+}
+
+// Таймштамп строки в произвольном плоском тексте (для cleanedText).
+function timeAtLine(text: string, lineNo: number): string | null {
+  const lines = text.split("\n");
+  let best: string | null = null;
+  for (let i = 0; i < Math.min(lineNo, lines.length); i++) {
+    const m = lines[i].match(RE_TIME_LINE);
+    if (m) best = m[1];
+  }
+  return best;
+}
+
+// Номер строки (1-based) первой реплики с данным таймштампом в parsed.
+function parsedLineForTime(parsed: { blocks: { utterances: { lineNo: number; time: string }[] }[] }, time: string): number | null {
+  for (const b of parsed.blocks) {
+    for (const u of b.utterances) {
+      if (u.time === time) return u.lineNo;
+    }
+  }
+  return null;
+}
+
+// Номер строки (1-based) первой реплики с данным таймштампом в плоском тексте.
+function lineForTime(text: string, time: string): number | null {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(RE_TIME_LINE);
+    if (m && m[1] === time) return i + 1;
+  }
+  return null;
 }

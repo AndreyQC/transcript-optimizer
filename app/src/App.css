@@ -366,6 +366,12 @@ body {
 .legend .dot.will-replace { background: rgba(220, 200, 60, 0.7); }
 .legend .dot.filler { background: rgba(140, 140, 140, 0.7); }
 
+.pane-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
 /* Статистика */
 .stats-panel {
   flex: 0 0 auto;

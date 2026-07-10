@@ -16,7 +16,11 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // На desktop биндимся на явный IPv4 127.0.0.1: Vite с host:false слушает все
+    // интерфейсы, но WebView2 на Windows иногда резолвит localhost в IPv6 (::1),
+    // и соединение падает — окно остаётся пустым при пустой консоли.
+    // TAURI_DEV_HOST используется только для мобильной разработки.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

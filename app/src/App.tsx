@@ -6,9 +6,20 @@ import { DictionaryTabs } from "./components/DictionaryTabs";
 import { YamlEditor } from "./components/YamlEditor";
 import { EditPanel } from "./components/EditPanel";
 import { useDictionaries } from "./store/dictionaries";
+import { useTranscript } from "./store/transcript";
 import "./App.css";
 
 function App() {
+  // Связка stores: при изменении содержимого словарей (entries) помечать
+  // существующий результат очистки устаревшим. Подписываемся на массив raw
+  // значений (строка), а не на сами entries, чтобы избежать ложных срабатываний
+  // по ссылке и не плодить ре-рендеры.
+  const rawsKey = useDictionaries((s) => s.entries.map((e) => e.raw).join("\u0000"));
+  const markCleanDirty = useTranscript((s) => s.markCleanDirty);
+  useEffect(() => {
+    markCleanDirty();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawsKey]);
   // Перехват закрытия окна: если есть несохранённые правки — спросить пользователя.
   // Любая ошибка внутри НЕ должна блокировать закрытие (окно обязано закрываться).
   useEffect(() => {

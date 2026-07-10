@@ -1,15 +1,24 @@
 import { useState } from "react";
 import { useDictionaries } from "../store/dictionaries";
-import { detectDictionaries, pickDir, writeFile as writeFileFn } from "../lib/fs";
+import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath } from "../lib/fs";
+import { exportGlossaryMarkdown } from "../lib/glossary-export";
+import type { ReplacementsFile, GlossaryFile } from "../types/dictionaries";
 
 // Тулбар: открыть папку словарей, сохранить активный файл, статус.
 export function Toolbar() {
+  const dir = useDictionaries((s) => s.dir);
   const openDir = useDictionaries((s) => s.openDir);
   const activeKind = useDictionaries((s) => s.activeKind);
   const activeEntry = useDictionaries((s) =>
     s.entries.find((e) => e.kind === activeKind),
   );
   const markSaved = useDictionaries((s) => s.markSaved);
+  const replacements = useDictionaries((s) =>
+    (s.entries.find((e) => e.kind === "replacements")?.data as ReplacementsFile | undefined) ?? null,
+  );
+  const glossary = useDictionaries((s) =>
+    (s.entries.find((e) => e.kind === "glossary")?.data as GlossaryFile | undefined) ?? null,
+  );
 
   const [status, setStatus] = useState<string>("");
 
@@ -48,7 +57,20 @@ export function Toolbar() {
     }
   }
 
+  async function handleExportGlossary() {
+    if (!dir) return;
+    try {
+      const md = exportGlossaryMarkdown({ replacements, glossary });
+      const path = joinPath(dir, "GLOSSARY.md");
+      await writeFileFn(path, md);
+      setStatus(`Глоссарий экспортирован: ${path}`);
+    } catch (e) {
+      setStatus(`Ошибка экспорта: ${String(e)}`);
+    }
+  }
+
   const canSave = !!activeEntry?.dirty;
+  const canExport = !!dir && (!!replacements || !!glossary);
 
   return (
     <header className="toolbar">
@@ -57,6 +79,9 @@ export function Toolbar() {
       </button>
       <button onClick={handleSave} className="btn" disabled={!canSave}>
         Сохранить{activeEntry ? ` (${activeEntry.kind})` : ""}
+      </button>
+      <button onClick={handleExportGlossary} className="btn" disabled={!canExport}>
+        Экспорт GLOSSARY.md
       </button>
       <span className="status">{status}</span>
     </header>

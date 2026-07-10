@@ -25,7 +25,8 @@ export async function writeFile(path: string, contents: string): Promise<void> {
 }
 
 // Присоединить имя файла к директории с учётом разделителей платформы.
-function joinPath(dir: string, name: string): string {
+// Присоединить имя файла к директории с учётом разделителей платформы.
+export function joinPath(dir: string, name: string): string {
   // Tauri/Windows принимает и / и \; унифицируем на /.
   const sep = dir.includes("/") && !dir.includes("\\") ? "/" : "\\";
   return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;

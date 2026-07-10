@@ -10,11 +10,12 @@ import type { Settings, FillerFile, ReplacementsFile, WhitelistFile } from "../t
 import type { Decoration, DecorationCategory } from "../engine/types";
 
 // Цвета подсветки по категории (idea §9.2: красный=OOV, жёлтый=будет-заменено).
+// Alpha повышена для читаемости на тёмном фоне; добавлены рамки/зачёркивание.
 const CATEGORY_CSS: Record<DecorationCategory, { bg: string }> = {
-  oov: { bg: "rgba(220, 60, 60, 0.35)" }, // красный
-  "will-replace": { bg: "rgba(220, 200, 60, 0.35)" }, // жёлтый
-  "filler-removed": { bg: "rgba(140, 140, 140, 0.30)" }, // серый
-  "short-garbage": { bg: "rgba(100, 100, 100, 0.45)" }, // тёмно-серый
+  oov: { bg: "rgba(220, 60, 60, 0.55)" }, // красный
+  "will-replace": { bg: "rgba(220, 200, 60, 0.50)" }, // жёлтый
+  "filler-removed": { bg: "rgba(120, 120, 120, 0.55)" }, // серый
+  "short-garbage": { bg: "rgba(90, 90, 90, 0.65)" }, // тёмно-серый
 };
 
 // Преобразовать decorations движка в Monaco decorations (через CSS-классы).
@@ -137,12 +138,12 @@ export function TranscriptView() {
   const onOrigMount: OnMount = useCallback((ed, monaco) => {
     origEditorRef.current = ed;
     monacoRef.current = monaco;
-    // Инъекция CSS для классов подсветки.
+    // Инъекция CSS для классов подсветки (alpha повышена для контраста).
     const css =
-      ".tco-deco-oov{background:rgba(220,60,60,0.35)!important;border-bottom:1px solid #dc3c3c}" +
-      ".tco-deco-will-replace{background:rgba(220,200,60,0.35)!important;border-bottom:1px solid #dcc83c}" +
-      ".tco-deco-filler-removed{background:rgba(140,140,140,0.30)!important;text-decoration:line-through}" +
-      ".tco-deco-short-garbage{background:rgba(100,100,100,0.45)!important}";
+      ".tco-deco-oov{background:rgba(220,60,60,0.55)!important;border-bottom:2px solid #dc3c3c}" +
+      ".tco-deco-will-replace{background:rgba(220,200,60,0.50)!important;border-bottom:2px solid #dcc83c}" +
+      ".tco-deco-filler-removed{background:rgba(120,120,120,0.55)!important;text-decoration:line-through}" +
+      ".tco-deco-short-garbage{background:rgba(90,90,90,0.65)!important;border-bottom:1px dashed #777}";
     monaco.editor.addEditorStyles?.(css) ??
       (() => {
         const style = document.createElement("style");

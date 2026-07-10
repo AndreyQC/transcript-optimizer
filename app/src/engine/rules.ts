@@ -145,13 +145,18 @@ function cleanUtterance(
   const origText = utt.text;
   let text = origText;
 
+  // Сдвиг колонок для Monaco: в оригинальной строке перед текстом реплики
+  // идёт префикс «[HH:MM:SS] » (длина 11). Токены/offset-ы считаем от text
+  // (без префикса), а Monaco показывает строку с префиксом → сдвигаем.
+  const colShift = `[${utt.time}] `.length; // = 11
+
   // 1. Filler-фразы — по подстроке (с границами слов, регистронезависимо).
   for (const phrase of ctx.fillerPhrases) {
     const re = new RegExp(`\\b${escapeRe(phrase)}\\b`, "gi");
     text = text.replace(re, (match, offset) => {
       // keep_override исключает удаление.
       if (ctx.keepOverride.has(norm(match))) return match;
-      addDecoration(decorations, utt.lineNo, offset + 1, offset + 1 + match.length, "filler-removed", "filler_phrase");
+      addDecoration(decorations, utt.lineNo, offset + colShift + 1, offset + colShift + 1 + match.length, "filler-removed", "filler_phrase");
       addHit(hitMap, match, "(удалено)", "filler", "filler_phrase");
       stats.removed += 1;
       return ""; // удаляем
@@ -172,8 +177,8 @@ function cleanUtterance(
     const rep = ctx.replaceIdx.get(key);
     if (!rep) continue;
     if (ctx.keepOverride.has(key)) continue;
-    // Позиция в origText (1-based col).
-    addDecoration(decorations, utt.lineNo, tok.start + 1, tok.end + 1, "will-replace", rep.ruleKey);
+    // Позиция в origText + сдвиг префикса (1-based col).
+    addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "will-replace", rep.ruleKey);
     addHit(hitMap, tok.value, rep.to, "replace", rep.ruleKey);
     stats.replaced += 1;
     // Замена в workText: ищем токен по значению (word-boundary, регистронезависимо).
@@ -199,7 +204,7 @@ function cleanUtterance(
   for (let i = toRemove.length - 1; i >= 0; i--) {
     const { value, start } = toRemove[i];
     text = text.slice(0, start) + text.slice(start + value.length);
-    addDecoration(decorations, utt.lineNo, start + 1, start + 1 + value.length, "filler-removed", "filler_word");
+      addDecoration(decorations, utt.lineNo, start + colShift + 1, start + colShift + 1 + value.length, "filler-removed", "filler_word");
     addHit(hitMap, value, "(удалено)", "filler", "filler_word");
     stats.removed += 1;
   }
@@ -213,10 +218,10 @@ function cleanUtterance(
     if (ctx.replaceIdx.has(key) || (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key))) continue;
     if (ctx.wl.has(key)) continue;
     if (tok.value.length < ctx.minWordLen) {
-      addDecoration(decorations, utt.lineNo, tok.start + 1, tok.end + 1, "short-garbage");
+      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "short-garbage");
       stats.suspect += 1;
     } else {
-      addDecoration(decorations, utt.lineNo, tok.start + 1, tok.end + 1, "oov");
+      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "oov");
       stats.suspect += 1;
     }
   }

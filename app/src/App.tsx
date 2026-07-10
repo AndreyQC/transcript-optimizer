@@ -10,24 +10,31 @@ import "./App.css";
 
 function App() {
   // Перехват закрытия окна: если есть несохранённые правки — спросить пользователя.
+  // Любая ошибка внутри НЕ должна блокировать закрытие (окно обязано закрываться).
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       try {
         const win = getCurrentWindow();
         unlisten = await win.onCloseRequested(async (event) => {
-          // Читаем актуальный флаг из store в момент закрытия (не из замыкания).
-          if (!useDictionaries.getState().entries.some((e) => e.dirty)) return;
-          const confirmed = await ask(
-            "Есть несохранённые изменения. Закрыть окно без сохранения?",
-            { title: "Несохранённые изменения", kind: "warning" },
-          );
-          if (!confirmed) {
-            event.preventDefault();
+          try {
+            // Читаем актуальный флаг из store в момент закрытия (не из замыкания).
+            if (!useDictionaries.getState().entries.some((e) => e.dirty)) return;
+            const confirmed = await ask(
+              "Есть несохранённые изменения. Закрыть окно без сохранения?",
+              { title: "Несохранённые изменения", kind: "warning" },
+            );
+            if (!confirmed) {
+              event.preventDefault();
+            }
+          } catch (e) {
+            // Диалог/проверка упали — не держим пользователя заложником: закрываем.
+            console.error("close-requested handler failed, allowing close:", e);
           }
         });
-      } catch {
+      } catch (e) {
         // Не в Tauri-окружении (например, vite dev в браузере) — игнорируем.
+        console.warn("onCloseRequested unavailable:", e);
       }
     })();
     return () => {

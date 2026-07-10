@@ -39,6 +39,14 @@ replacements:
     from:
     - жире
     - джира
+  replacement_rule_006:
+    to: EasyMerch
+    label: brand_product
+    description: "это система для автоматизации работы полевых сотрудников: мерчендайзеров, торговых представителей, аудиторов и других. Её ещё относят к классу SFA (Sales Force Automation — автоматизация работы торгового персонала)"
+    from:
+    - Изи
+    - изи мерч
+    - изимерч
 lemma_replacements:
   lemma_rule_001:
     to: Slack

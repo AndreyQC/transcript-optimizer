@@ -1,15 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Toolbar } from "./components/Toolbar";
 import { DictionaryTabs } from "./components/DictionaryTabs";
 import { YamlEditor } from "./components/YamlEditor";
 import { EditPanel } from "./components/EditPanel";
+import { TranscriptView } from "./components/TranscriptView";
 import { useDictionaries } from "./store/dictionaries";
 import { useTranscript } from "./store/transcript";
 import "./App.css";
 
+type Mode = "dictionaries" | "transcript";
+
 function App() {
+  const [mode, setMode] = useState<Mode>("dictionaries");
+
   // Связка stores: при изменении содержимого словарей (entries) помечать
   // существующий результат очистки устаревшим. Подписываемся на массив raw
   // значений (строка), а не на сами entries, чтобы избежать ложных срабатываний
@@ -55,14 +60,36 @@ function App() {
 
   return (
     <div className="app-root">
-      <Toolbar />
-      <DictionaryTabs />
-      <div className="main-pane">
-        <div className="editor-pane">
-          <YamlEditor />
+      <nav className="mode-switch">
+        <button
+          className={mode === "dictionaries" ? "mode-btn active" : "mode-btn"}
+          onClick={() => setMode("dictionaries")}
+        >
+          Словари
+        </button>
+        <button
+          className={mode === "transcript" ? "mode-btn active" : "mode-btn"}
+          onClick={() => setMode("transcript")}
+        >
+          Транскрипт
+        </button>
+      </nav>
+      <Toolbar mode={mode} />
+      {mode === "dictionaries" ? (
+        <>
+          <DictionaryTabs />
+          <div className="main-pane">
+            <div className="editor-pane">
+              <YamlEditor />
+            </div>
+            <EditPanel />
+          </div>
+        </>
+      ) : (
+        <div className="transcript-container">
+          <TranscriptView />
         </div>
-        <EditPanel />
-      </div>
+      )}
     </div>
   );
 }

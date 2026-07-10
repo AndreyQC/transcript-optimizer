@@ -1,11 +1,17 @@
 import { useState } from "react";
+import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { useDictionaries } from "../store/dictionaries";
-import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath } from "../lib/fs";
+import { useTranscript } from "../store/transcript";
+import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath, readFile as readFileFn } from "../lib/fs";
 import { exportGlossaryMarkdown } from "../lib/glossary-export";
-import type { ReplacementsFile, GlossaryFile } from "../types/dictionaries";
+import { applyRules } from "../engine/rules";
+import type { ReplacementsFile, GlossaryFile, Settings, FillerFile, WhitelistFile } from "../types/dictionaries";
 
-// Тулбар: открыть папку словарей, сохранить активный файл, статус.
-export function Toolbar() {
+type Mode = "dictionaries" | "transcript";
+
+// Тулбар. В режиме «Словари»: открыть папку/сохранить/экспорт глоссария.
+// В режиме «Транскрипт»: открыть транскрипт / применить правила (Очистить).
+export function Toolbar({ mode }: { mode: Mode }) {
   const dir = useDictionaries((s) => s.dir);
   const openDir = useDictionaries((s) => s.openDir);
   const activeKind = useDictionaries((s) => s.activeKind);
@@ -19,6 +25,18 @@ export function Toolbar() {
   const glossary = useDictionaries((s) =>
     (s.entries.find((e) => e.kind === "glossary")?.data as GlossaryFile | undefined) ?? null,
   );
+
+  // transcript-store для режима транскрипта.
+  const transcript = useTranscript((s) => s.transcript);
+  const openTranscript = useTranscript((s) => s.openTranscript);
+  const closeTranscript = useTranscript((s) => s.closeTranscript);
+  const setCleanResult = useTranscript((s) => s.setCleanResult);
+  const cleanDirty = useTranscript((s) => s.cleanDirty);
+
+  // Словарные данные для applyRules.
+  const settings = useDictionaries((s) => (s.entries.find((e) => e.kind === "settings")?.data as Settings | null) ?? null);
+  const filler = useDictionaries((s) => (s.entries.find((e) => e.kind === "filler")?.data as FillerFile | null) ?? null);
+  const whitelist = useDictionaries((s) => (s.entries.find((e) => e.kind === "whitelist")?.data as WhitelistFile | null) ?? null);
 
   const [status, setStatus] = useState<string>("");
 
@@ -69,8 +87,57 @@ export function Toolbar() {
     }
   }
 
+  async function handleOpenTranscript() {
+    try {
+      const chosen = await pickFile({
+        multiple: false,
+        filters: [{ name: "Текст", extensions: ["txt"] }],
+      });
+      if (typeof chosen !== "string") return;
+      const raw = await readFileFn(chosen);
+      openTranscript(chosen, raw);
+      setStatus(`Транскрипт открыт: ${chosen}`);
+    } catch (e) {
+      setStatus(`Ошибка открытия транскрипта: ${String(e)}`);
+    }
+  }
+
+  function handleClean() {
+    if (!transcript) return;
+    try {
+      const result = applyRules(transcript.parsed, { settings, filler, replacements, whitelist });
+      setCleanResult(result);
+      setStatus(
+        `Очищено: замен ${result.stats.replaced}, удалено ${result.stats.removed}, подозрительных ${result.stats.suspect}`,
+      );
+    } catch (e) {
+      setStatus(`Ошибка очистки: ${String(e)}`);
+    }
+  }
+
   const canSave = !!activeEntry?.dirty;
   const canExport = !!dir && (!!replacements || !!glossary);
+  const canClean = !!transcript;
+
+  if (mode === "transcript") {
+    return (
+      <header className="toolbar">
+        <button onClick={handleOpenTranscript} className="btn">
+          Открыть транскрипт
+        </button>
+        <button onClick={handleClean} className="btn" disabled={!canClean}>
+          Очистить
+        </button>
+        {transcript && (
+          <button onClick={closeTranscript} className="btn">
+            Закрыть транскрипт
+          </button>
+        )}
+        {cleanDirty && <span className="badge-stale">⚠ результат устарел</span>}
+        <span className="status">{status}</span>
+      </header>
+    );
+  }
 
   return (
     <header className="toolbar">

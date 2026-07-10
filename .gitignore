@@ -1,2 +1,10 @@
 # Real transcripts may contain personal data; keep them local only.
 sample/transcript_optimizer/*.txt
+
+# IDE metadata
+.zcode/
+
+# Generated export artifacts (produced by the app on demand)
+sample/transcript_optimizer/GLOSSARY.md
+sample/transcript_optimizer/stats-export.md
+

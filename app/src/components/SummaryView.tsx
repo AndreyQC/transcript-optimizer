@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -9,6 +9,7 @@ import { useTranscript } from "../store/transcript";
 import { useTheme } from "../store/theme";
 import { useSummary } from "../store/summary";
 import { streamChatCompletion, type LlmSettings } from "../lib/llm";
+import { stripReasoning } from "../lib/reasoning";
 import { writeFile } from "../lib/fs";
 import { Mermaid } from "./Mermaid";
 
@@ -56,6 +57,13 @@ export function SummaryView() {
   const [error, setError] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<string>("");
 
+  // Флаг «diff уже предложен». Автопереключение на diff срабатывает ОДИН раз —
+  // ровно когда оба результата впервые готовы и стрим остановлен. После этого
+  // пользователь может свободно переключаться на Raw/Cleaned (чтобы посмотреть
+  // результат и сохранить), и эффект не должен перетягивать его обратно на diff.
+  // Сбрасывается при старте нового стрима в runSummary.
+  const diffOfferedRef = useRef(false);
+
   // При монтировании — проверить наличие ключа (не делаем этого на импорте store,
   // чтобы не падать вне Tauri). Зависимости пустые — только на mount.
   useEffect(() => {
@@ -67,13 +75,14 @@ export function SummaryView() {
   // Diff доступен только когда оба результата непустые.
   const canDiff = hasRaw && hasCleaned;
 
-  // Автопереключение на diff — только когда ОБА результата готовы И ни один не
-  // стримится. Раньше условие было просто canDiff, что переключало на diff во
-  // время стриминга cleaned (после первого чанка hasCleaned уже true) — это был
-  // баг №1: вместо потока cleaned пользователь видел diff. Теперь ждём окончания
-  // стрима (streaming === null), прежде чем предложить diff.
+  // Автопереключение на diff — ОДИН раз, когда оба результата впервые готовы и
+  // стрим остановлен. Раньше эффект перетягивал на diff при каждом изменении
+  // sourceTab, не давая пользователю удержать Raw/Cleaned (баг: перескакивало
+  // на diff, кнопка «Сохранить .md» исчезала). Теперь флаг diffOffered гасит
+  // повторные автопереключения; сбрасывается только в runSummary при новом стриме.
   useEffect(() => {
-    if (canDiff && streaming === null && sourceTab !== "diff") {
+    if (canDiff && streaming === null && !diffOfferedRef.current) {
+      diffOfferedRef.current = true;
       setSourceTab("diff");
       return;
     }
@@ -134,6 +143,10 @@ export function SummaryView() {
     if (target === "raw") setSummaryRaw("");
     else setSummaryCleaned("");
 
+    // Новый стрим — сбросить флаг «diff предложен», чтобы по завершении
+    // автопереключение на diff сработало снова (если оба результата будут готовы).
+    diffOfferedRef.current = false;
+
     // Автопереключение на вкладку «Поток» активного источника — чтобы
     // пользователь сразу видел, как стрим заполняется.
     setSourceTab(target);
@@ -174,15 +187,28 @@ export function SummaryView() {
     }
   }
 
-  // Текст активного источника (raw или cleaned) — для Потока/Результата/сохранения.
+  // Текст активного источника (raw или cleaned) — как есть, с <think>-рассуждениями.
+  // Используется ТОЛЬКО во вкладке «Поток» (пользователь видит ход мыслей модели).
   const activeSourceText = sourceTab === "raw" ? summaryRaw : summaryCleaned;
   const activeSourceHas = sourceTab === "raw" ? hasRaw : hasCleaned;
 
+  // Очищенные от рассуждений версии (без <think>/<reasoning>/<reflection>).
+  // useMemo — чтобы не гонять stripReasoning на каждом рендере. Применяются в
+  // «Результат», Diff и при сохранении .md. «Поток» показывает исходный текст.
+  const cleanedRaw = useMemo(() => stripReasoning(summaryRaw), [summaryRaw]);
+  const cleanedCleaned = useMemo(
+    () => stripReasoning(summaryCleaned),
+    [summaryCleaned],
+  );
+  // Очищенный текст активного источника — для Результата/сохранения.
+  const activeSourceCleaned =
+    sourceTab === "raw" ? cleanedRaw : cleanedCleaned;
+
   // Сохранить финальный Markdown-результат через save-диалог. Доступно только
   // на вкладке «Результат» (sourceTab !== "diff", viewMode === "result").
-  // Сохраняется source Markdown (не HTML) — его можно дальше открыть в редакторе.
+  // Сохраняется ОЧИЩЕННЫЙ Markdown (без рассуждений) — его можно дальше открыть в редакторе.
   async function handleSaveMarkdown() {
-    const text = activeSourceText;
+    const text = activeSourceCleaned;
     if (!text) return;
     try {
       const path = await save({
@@ -462,8 +488,8 @@ export function SummaryView() {
           {sourceTab === "diff" ? (
             <div className="summary-diff">
               <DiffEditor
-                original={summaryRaw}
-                modified={summaryCleaned}
+                original={cleanedRaw}
+                modified={cleanedCleaned}
                 theme={themeMode === "dark" ? "vs-dark" : "light"}
                 language="markdown"
                 options={{ readOnly: true, renderSideBySide: true }}
@@ -499,7 +525,7 @@ export function SummaryView() {
                   rehypePlugins={[rehypeRaw]}
                   components={markdownComponents}
                 >
-                  {activeSourceText}
+                  {activeSourceCleaned}
                 </ReactMarkdown>
               </div>
             </div>

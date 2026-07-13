@@ -72,6 +72,70 @@ replacements:
     label: linguistic
     from:
     - икалась
+  replacement_rule_012:
+    to: Opus
+    label: brand_product
+    from:
+    - опус
+  replacement_rule_013:
+    to: "Deck buddy"
+    label: tech_term
+    description: Утилита создания презентаций
+    from:
+    - Декбади
+  replacement_rule_014:
+    to: LangChain
+    label: tech_term
+    from:
+    - лонгчейн
+  replacement_rule_015:
+    to: n8n
+    label: tech_term
+    from:
+    - N8N
+  replacement_rule_016:
+    to: Defy
+    label: tech_term
+    from:
+    - DeFiom
+  replacement_rule_017:
+    to: приложение
+    label: tech_term
+    from:
+    - приложу
+    - приложуху
+  replacement_rule_018:
+    to: Sheet
+    label: tech_term
+    from:
+    - шит
+  replacement_rule_019:
+    to: Хорошо
+    label: linguistic
+    from:
+    - окей
+  replacement_rule_020:
+    to: default
+    label: tech_term
+    from:
+    - дефолтом
+  replacement_rule_021:
+    to: GitHub
+    label: tech_term
+    from:
+    - Гитхаб
+  replacement_rule_022:
+    to: да
+    label: linguistic
+    from:
+    - да, да, да,
+  replacement_rule_023:
+    to: LLM
+    label: tech_term
+    from:
+    - LLM
+    - ллм
+    - элэлэм
 lemma_replacements:
   lemma_rule_001:
     to: Slack

@@ -6,11 +6,12 @@ import { DictionaryTabs } from "./components/DictionaryTabs";
 import { YamlEditor } from "./components/YamlEditor";
 import { EditPanel } from "./components/EditPanel";
 import { TranscriptView } from "./components/TranscriptView";
+import { SummaryView } from "./components/SummaryView";
 import { useDictionaries } from "./store/dictionaries";
 import { useTranscript } from "./store/transcript";
 import "./App.css";
 
-type Mode = "dictionaries" | "transcript";
+type Mode = "dictionaries" | "transcript" | "summary";
 
 function App() {
   const [mode, setMode] = useState<Mode>("dictionaries");
@@ -73,6 +74,12 @@ function App() {
         >
           Транскрипт
         </button>
+        <button
+          className={mode === "summary" ? "mode-btn active" : "mode-btn"}
+          onClick={() => setMode("summary")}
+        >
+          Саммари
+        </button>
       </nav>
       <Toolbar mode={mode} />
       {mode === "dictionaries" ? (
@@ -85,10 +92,12 @@ function App() {
             <EditPanel />
           </div>
         </>
-      ) : (
+      ) : mode === "transcript" ? (
         <div className="transcript-container">
           <TranscriptView />
         </div>
+      ) : (
+        <SummaryView />
       )}
     </div>
   );

@@ -3,3 +3,13 @@ settings:
   similarity_threshold: 0.65
   min_word_len: 3
   suggestions_header: true
+  llm:
+    base_url: https://api.minimax.io/v1
+    model: MiniMax-M3
+    temperature: 0.3
+    max_tokens: 4096
+    system_prompt_path: C:\repos\personal\-=Sourcecraft=-\transcript-optimizer\sample\transcript_optimizer\drill_ai_skill_summary.md
+    user_prompt_template: |-
+      Сделай саммари следующего транскрипта:
+
+      {transcript}

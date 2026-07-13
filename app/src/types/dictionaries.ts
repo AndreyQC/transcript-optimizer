@@ -10,6 +10,25 @@ export interface Settings {
   similarity_threshold: number; // 0..1
   min_word_len: number;
   suggestions_header: boolean;
+  // Настройки LLM для режима «Саммари». Опционально: если подраздел не задан,
+  // store/llm.ts откатывается к DEFAULT_LLM_SETTINGS из lib/llm.ts. Хранится
+  // здесь (а не в localStorage), чтобы жить рядом с остальными словарями и
+  // версионироваться/переноситься вместе с папкой проекта.
+  llm?: LlmYamlSettings;
+}
+
+// Подраздел `llm` в settings.yaml. snake_case по конвенции YAML-файлов проекта.
+export interface LlmYamlSettings {
+  base_url: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  // Абсолютный (или относительный от папки словарей) путь к .md-файлу промпта.
+  // Тело промпта живёт ТОЛЬКО в этом файле — в YAML оно не дублируется.
+  // Опционально: может отсутствовать в старых YAML (тогда UI покажет «не выбран»).
+  system_prompt_path?: string;
+  // Шаблон пользовательского сообщения с плейсхолдером {transcript}.
+  user_prompt_template: string;
 }
 
 // glossary.yaml — enum категорий для label (idea.md §10.7)

@@ -152,7 +152,7 @@ function cleanUtterance(
 
   // 1. Filler-фразы — по подстроке (с границами слов, регистронезависимо).
   for (const phrase of ctx.fillerPhrases) {
-    const re = new RegExp(`\\b${escapeRe(phrase)}\\b`, "gi");
+    const re = wordBoundaryRe(phrase, "gi");
     text = text.replace(re, (match, offset) => {
       // keep_override исключает удаление.
       if (ctx.keepOverride.has(norm(match))) return match;
@@ -182,7 +182,7 @@ function cleanUtterance(
     addHit(hitMap, tok.value, rep.to, "replace", rep.ruleKey);
     stats.replaced += 1;
     // Замена в workText: ищем токен по значению (word-boundary, регистронезависимо).
-    const reTok = new RegExp(`\\b${escapeRe(tok.value)}\\b`, "i");
+    const reTok = wordBoundaryRe(tok.value, "i");
     // capitalize, если токен в начале строки и to ожидает заглавную.
     const isSentenceStart = isAtSentenceStart(origText, tok.start);
     const replacement = rep.capitalize && isSentenceStart ? capitalize(rep.to) : rep.to;
@@ -260,6 +260,17 @@ function addHit(
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Regex для точного совпадения слова/фразы с границами. JS-овый `\b` определён
+// через `[A-Za-z0-9_]` и НЕ работает с кириллицей/Unicode — поэтому используем
+// lookaround с Unicode property escapes (`\p{L}` = любая буква, `\p{N}` = цифра)
+// и флаг `u`. Слово считается отдельным, если слева/справа нет буквы или цифры.
+// Дефис/апостроф внутри фразы (напр. «код-ревью») допускаются — они не являются
+// границей (соответствует логике токенизатора).
+function wordBoundaryRe(phrase: string, flags: "i" | "gi"): RegExp {
+  const inner = escapeRe(phrase);
+  return new RegExp(`(?<![\\p{L}\\p{N}])${inner}(?![\\p{L}\\p{N}])`, flags + "u");
 }
 
 function capitalize(s: string): string {

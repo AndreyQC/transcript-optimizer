@@ -1,5 +1,5 @@
 import { parseDocument, type Document } from "yaml";
-import type { DictKind } from "../types/dictionaries";
+import type { DictKind, LlmYamlSettings } from "../types/dictionaries";
 
 // Опции сериализации, при которых пакет `yaml` сохраняет стиль исходника:
 // indentSeq:false — тире блочного списка на уровне родителя (как в образцах),
@@ -187,4 +187,32 @@ export function previewAdd(raw: string, input: AddEntryInput): EditResult {
 }
 export function previewDelete(raw: string, input: DeleteEntryInput): EditResult {
   return deleteEntry(raw, input);
+}
+
+// Перезаписать подраздел `settings.llm` в settings.yaml новыми значениями.
+// Сохраняет все остальные поля settings.yaml. Создаёт подраздел, если его не было.
+// snake_case — по конвенции YAML-файлов проекта (не camelCase, как в lib/llm.ts).
+export function setLlmSettings(raw: string, llm: LlmYamlSettings): EditResult {
+  return applyEdit(raw, (doc) => {
+    const settingsMap = doc.get("settings", true) as
+      | { set: (k: string, v: unknown) => void }
+      | undefined;
+    if (!settingsMap) {
+      // throw внутри applyEdit-колбэка ловится try/catch и возвращается как
+      // EditResult с ошибкой. (Прежний `return … as unknown as void` НЕ работал —
+      // колбэк типизирован как `void`, applyEdit игнорирует возвращаемое значение.)
+      throw new Error("settings.yaml: нет корневого раздела `settings`");
+    }
+    const node = doc.createNode({
+      base_url: llm.base_url,
+      model: llm.model,
+      temperature: llm.temperature,
+      max_tokens: llm.max_tokens,
+      // system_prompt_path — путь к .md-файлу промпта (опциональный; пустая
+      // строка = файл не выбран). Тело промпта в YAML не хранится.
+      system_prompt_path: llm.system_prompt_path ?? "",
+      user_prompt_template: llm.user_prompt_template,
+    });
+    settingsMap.set("llm", node);
+  });
 }

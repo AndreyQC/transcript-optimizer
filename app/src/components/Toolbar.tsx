@@ -8,7 +8,7 @@ import { exportGlossaryMarkdown } from "../lib/glossary-export";
 import { applyRules } from "../engine/rules";
 import type { ReplacementsFile, GlossaryFile, Settings, FillerFile, WhitelistFile } from "../types/dictionaries";
 
-type Mode = "dictionaries" | "transcript";
+type Mode = "dictionaries" | "transcript" | "summary";
 
 // Тулбар. В режиме «Словари»: открыть папку/сохранить/экспорт глоссария.
 // В режиме «Транскрипт»: открыть транскрипт / применить правила (Очистить).
@@ -123,6 +123,25 @@ export function Toolbar({ mode }: { mode: Mode }) {
   const canSave = !!activeEntry?.dirty;
   const canExport = !!dir && (!!replacements || !!glossary);
   const canClean = !!transcript;
+
+  if (mode === "summary") {
+    // Режим «Саммари» не использует словарные/транскрипт-кнопки тулбара:
+    // настройки и кнопки запуска живут внутри SummaryView. Показываем только
+    // переключатель темы и строку статуса.
+    return (
+      <header className="toolbar">
+        <button
+          onClick={toggleTheme}
+          className="btn theme-toggle"
+          title={themeMode === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
+          aria-label="Переключить тему"
+        >
+          {themeMode === "dark" ? "☼" : "☾"}
+        </button>
+        <span className="status">{status}</span>
+      </header>
+    );
+  }
 
   if (mode === "transcript") {
     return (

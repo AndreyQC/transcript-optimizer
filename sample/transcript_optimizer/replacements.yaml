@@ -47,6 +47,31 @@ replacements:
     - Изи
     - изи мерч
     - изимерч
+  replacement_rule_007:
+    to: изображения
+    label: linguistic
+    from:
+    - картиночки
+  replacement_rule_008:
+    to: Презентация
+    label: linguistic
+    from:
+    - Дему
+  replacement_rule_009:
+    to: сделать
+    label: linguistic
+    from:
+    - навородить
+  replacement_rule_010:
+    to: промпты
+    label: linguistic
+    from:
+    - промты
+  replacement_rule_011:
+    to: икалось
+    label: linguistic
+    from:
+    - икалась
 lemma_replacements:
   lemma_rule_001:
     to: Slack

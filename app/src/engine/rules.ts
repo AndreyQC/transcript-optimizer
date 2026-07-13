@@ -28,6 +28,11 @@ export interface RuleInput {
 // «Эффективный whitelist» = common_words ∪ {все to из replacements/lemma}.
 // Вычисляется в рантайме, НЕ пишется в detector_whitelist.yaml (idea §8.3.4).
 // Все значения — в нижнем регистре (регистронезависимое сравнение).
+//
+// Русские служебные слова (предлоги, союзы, частицы, местоимения) добавляются
+// пользователем в detector_whitelist.yaml (раздел common_words). Без них короткие
+// предлоги/местоимения ложно помечаются как short-garbage — см. комментарий у
+// блока OOV/short-garbage в cleanUtterance.
 export function effectiveWhitelist(
   whitelist: WhitelistFile | null,
   replacements: ReplacementsFile | null,

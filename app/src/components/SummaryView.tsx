@@ -7,6 +7,7 @@ import { open as pickFile, save } from "@tauri-apps/plugin-dialog";
 import { useLlm } from "../store/llm";
 import { useTranscript } from "../store/transcript";
 import { useTheme } from "../store/theme";
+import { useSummary } from "../store/summary";
 import { streamChatCompletion, type LlmSettings } from "../lib/llm";
 import { writeFile } from "../lib/fs";
 import { Mermaid } from "./Mermaid";
@@ -19,10 +20,11 @@ import { Mermaid } from "./Mermaid";
 //   под-вкладки (только для Raw/Cleaned): Поток (сырой текст) | Результат (рендер)
 // Поток — моноширинный <pre>, видно как стрим заполняется. Результат — отрендеренный
 // Markdown + кнопка «Сохранить .md».
-
-type StreamTarget = "raw" | "cleaned" | null;
-type SourceTab = "raw" | "cleaned" | "diff";
-type ViewMode = "stream" | "result";
+//
+// ВАЖНО: результаты саммари (summaryRaw/Cleaned, streaming, вкладки) живут в
+// store/summary.ts, а не в локальном useState. Иначе уход в другой режим
+// (Словари/Транскрипт) размонтирует этот компонент и потеряет результаты —
+// это был баг №2.
 
 export function SummaryView() {
   // store-подписки: settings (плоский объект — безопасный селектор, см. §3 LL),
@@ -38,13 +40,21 @@ export function SummaryView() {
 
   const themeMode = useTheme((s) => s.mode);
 
-  const [summaryRaw, setSummaryRaw] = useState("");
-  const [summaryCleaned, setSummaryCleaned] = useState("");
-  const [streaming, setStreaming] = useState<StreamTarget>(null);
+  // Результаты саммари — из store, чтобы переживать размонтирование компонента
+  // при переключении режима (баг №2). Локально — только error/saveStatus (UI-only).
+  const summaryRaw = useSummary((s) => s.summaryRaw);
+  const summaryCleaned = useSummary((s) => s.summaryCleaned);
+  const streaming = useSummary((s) => s.streaming);
+  const sourceTab = useSummary((s) => s.sourceTab);
+  const viewMode = useSummary((s) => s.viewMode);
+  const setSummaryRaw = useSummary((s) => s.setSummaryRaw);
+  const setSummaryCleaned = useSummary((s) => s.setSummaryCleaned);
+  const setStreaming = useSummary((s) => s.setStreaming);
+  const setSourceTab = useSummary((s) => s.setSourceTab);
+  const setViewMode = useSummary((s) => s.setViewMode);
+
   const [error, setError] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<string>("");
-  const [sourceTab, setSourceTab] = useState<SourceTab>("raw");
-  const [viewMode, setViewMode] = useState<ViewMode>("stream");
 
   // При монтировании — проверить наличие ключа (не делаем этого на импорте store,
   // чтобы не падать вне Tauri). Зависимости пустые — только на mount.
@@ -57,17 +67,21 @@ export function SummaryView() {
   // Diff доступен только когда оба результата непустые.
   const canDiff = hasRaw && hasCleaned;
 
-  // Если активная вкладка стала недоступной (результат стёрли) или появился
-  // второй результат (автопереключение на diff) — корректируем sourceTab.
+  // Автопереключение на diff — только когда ОБА результата готовы И ни один не
+  // стримится. Раньше условие было просто canDiff, что переключало на diff во
+  // время стриминга cleaned (после первого чанка hasCleaned уже true) — это был
+  // баг №1: вместо потока cleaned пользователь видел diff. Теперь ждём окончания
+  // стрима (streaming === null), прежде чем предложить diff.
   useEffect(() => {
-    if (canDiff && sourceTab !== "diff") {
+    if (canDiff && streaming === null && sourceTab !== "diff") {
       setSourceTab("diff");
       return;
     }
-    if (sourceTab === "diff" && !canDiff) {
+    // Если результат стёрли или стрим идёт — с diff уходим на активный источник.
+    if (sourceTab === "diff" && (!canDiff || streaming !== null)) {
       setSourceTab(hasRaw ? "raw" : hasCleaned ? "cleaned" : "raw");
     }
-  }, [canDiff, sourceTab, hasRaw, hasCleaned]);
+  }, [canDiff, streaming, sourceTab, hasRaw, hasCleaned, setSourceTab]);
 
   const keyMissing = apiKeyAvailable === false;
   const hasPrompt = settings.systemPromptPath.trim().length > 0;

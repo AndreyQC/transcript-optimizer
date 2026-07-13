@@ -3,6 +3,7 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranscript } from "../store/transcript";
 import { useDictionaries } from "../store/dictionaries";
+import { useTheme } from "../store/theme";
 import { applyRules } from "../engine/rules";
 import { exportStatsMarkdown } from "../lib/stats-export";
 import { writeFile } from "../lib/fs";
@@ -126,6 +127,9 @@ export function TranscriptView() {
   const replacements = useDictionaries((s) => (s.entries.find((e) => e.kind === "replacements")?.data as ReplacementsFile | null) ?? null);
   const whitelist = useDictionaries((s) => (s.entries.find((e) => e.kind === "whitelist")?.data as WhitelistFile | null) ?? null);
 
+  // Тема обоих Monaco-редакторов (vs-dark / light).
+  const themeMode = useTheme((s) => s.mode);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const origEditorRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -230,7 +234,7 @@ export function TranscriptView() {
           <Editor
             height="100%"
             language="plaintext"
-            theme="vs-dark"
+            theme={themeMode === "dark" ? "vs-dark" : "light"}
             path={transcript.path + "#orig"}
             value={transcript.raw}
             onMount={onOrigMount}
@@ -259,7 +263,7 @@ export function TranscriptView() {
           <Editor
             height="100%"
             language="plaintext"
-            theme="vs-dark"
+            theme={themeMode === "dark" ? "vs-dark" : "light"}
             path={transcript.path + "#clean"}
             value={cleanResult?.cleanedText ?? ""}
             onMount={onCleanMount}

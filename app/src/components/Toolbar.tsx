@@ -2,6 +2,7 @@ import { useState } from "react";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
 import { useDictionaries } from "../store/dictionaries";
 import { useTranscript } from "../store/transcript";
+import { useTheme } from "../store/theme";
 import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath, readFile as readFileFn } from "../lib/fs";
 import { exportGlossaryMarkdown } from "../lib/glossary-export";
 import { applyRules } from "../engine/rules";
@@ -39,6 +40,10 @@ export function Toolbar({ mode }: { mode: Mode }) {
   const whitelist = useDictionaries((s) => (s.entries.find((e) => e.kind === "whitelist")?.data as WhitelistFile | null) ?? null);
 
   const [status, setStatus] = useState<string>("");
+
+  // Тема — переключатель виден в обоих режимах.
+  const themeMode = useTheme((s) => s.mode);
+  const toggleTheme = useTheme((s) => s.toggle);
 
   async function handleOpen() {
     try {
@@ -122,6 +127,14 @@ export function Toolbar({ mode }: { mode: Mode }) {
   if (mode === "transcript") {
     return (
       <header className="toolbar">
+        <button
+          onClick={toggleTheme}
+          className="btn theme-toggle"
+          title={themeMode === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
+          aria-label="Переключить тему"
+        >
+          {themeMode === "dark" ? "☼" : "☾"}
+        </button>
         <button onClick={handleOpenTranscript} className="btn">
           Открыть транскрипт
         </button>
@@ -141,6 +154,14 @@ export function Toolbar({ mode }: { mode: Mode }) {
 
   return (
     <header className="toolbar">
+      <button
+        onClick={toggleTheme}
+        className="btn theme-toggle"
+        title={themeMode === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
+        aria-label="Переключить тему"
+      >
+        {themeMode === "dark" ? "☼" : "☾"}
+      </button>
       <button onClick={handleOpen} className="btn">
         Открыть папку словарей
       </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { useDictionaries, getGlossaryCategories } from "../store/dictionaries";
+import { useTheme } from "../store/theme";
 import { validateDictionary } from "../lib/validate";
 
 // MarkerSeverity в Monaco: Error=8, Warning=4. Числовые константы используем
@@ -26,6 +27,8 @@ export function YamlEditor() {
     s.entries.find((e) => e.kind === activeKind),
   );
   const editRaw = useDictionaries((s) => s.editRaw);
+  // Тема: vs-dark / light. @monaco-editor/react сам вызывает setTheme при смене.
+  const mode = useTheme((s) => s.mode);
   // Подписываемся на entries (стабильная ссылка массива), а Set категорий
   // вычисляем в useMemo — иначе селектор, возвращающий новый Set каждый раз,
   // вызывает бесконечный ре-рендер (Maximum update depth exceeded).
@@ -89,7 +92,7 @@ export function YamlEditor() {
     <Editor
       height="100%"
       language="yaml"
-      theme="vs-dark"
+      theme={mode === "dark" ? "vs-dark" : "light"}
       path={activeEntry.path}
       value={activeEntry.raw}
       onMount={onMount}

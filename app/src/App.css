@@ -1,12 +1,81 @@
+/* ===== Палитра: семантические CSS-переменные ===== */
+/* Тёмная тема — по умолчанию (значения как у прежнего хардкода). */
 :root {
+  /* фон-уровни */
+  --bg-app:        #1e1e1e;   /* корневой фон */
+  --bg-surface:    #252526;   /* тулбар, вкладки, панели */
+  --bg-elevated:   #2d2d30;   /* кнопки, поля ввода */
+  --bg-input:      #3c3c3c;   /* поля форм */
+  --bg-hover:      #3a3d41;
+
+  /* текст */
+  --text-primary:    #e6e6e6;
+  --text-secondary:  #9d9d9d;
+  --text-muted:      #969696;
+  --text-bright:     #ffffff;
+
+  /* границы/акценты */
+  --border:          #3c3c3c;
+  --border-soft:     #2d2d30;
+  --accent:          #0e639c;   /* подчёркивание активной вкладки */
+  --accent-hover:    #1177bb;
+
+  /* семантика */
+  --error-bg:        #5a1d1d;
+  --error-fg:        #ffb4b4;
+  --error-bg-hover:  #7a2424;
+  --diff-plus-bg:    #2d4a2d;
+  --diff-plus-fg:    #9bd89b;
+  --diff-minus-bg:   #4a2d2d;
+  --diff-minus-fg:   #d89b9b;
+  --warn:            #d4a85a;   /* устаревший результат / бейджи */
+
+  /* легенда подсветки транскрипта */
+  --legend-oov:          rgba(220, 60, 60, 0.7);
+  --legend-will-replace: rgba(220, 200, 60, 0.7);
+  --legend-filler:       rgba(140, 140, 140, 0.7);
+
+  /* базовый шрифт */
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 14px;
-  color: #e6e6e6;
-  background-color: #1e1e1e;
+  color: var(--text-primary);
+  background-color: var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Светлая тема — переключается через <html data-theme="light">. */
+[data-theme="light"] {
+  --bg-app:        #ffffff;
+  --bg-surface:    #f3f3f3;
+  --bg-elevated:   #e8e8e8;
+  --bg-input:      #ffffff;
+  --bg-hover:      #d9d9d9;
+
+  --text-primary:    #1f1f1f;
+  --text-secondary:  #6a6a6a;
+  --text-muted:      #7a7a7a;
+  --text-bright:     #000000;
+
+  --border:          #d4d4d4;
+  --border-soft:     #e5e5e5;
+  --accent:          #0066b8;
+  --accent-hover:    #0078d4;
+
+  --error-bg:        #fde7e7;
+  --error-fg:        #b3092f;
+  --error-bg-hover:  #f8d0d0;
+  --diff-plus-bg:    #e6f4e6;
+  --diff-plus-fg:    #1f7a1f;
+  --diff-minus-bg:   #f7e6e6;
+  --diff-minus-fg:   #b33a3a;
+  --warn:            #b5780f;
+
+  --legend-oov:          rgba(200, 30, 30, 0.85);
+  --legend-will-replace: rgba(170, 130, 0, 0.85);
+  --legend-filler:       rgba(110, 110, 110, 0.85);
 }
 
 * {
@@ -31,15 +100,15 @@ body {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background-color: #252526;
-  border-bottom: 1px solid #3c3c3c;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
 .btn {
-  border: 1px solid #3c3c3c;
-  background-color: #2d2d30;
-  color: #e6e6e6;
+  border: 1px solid var(--border);
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
   padding: 5px 12px;
   font-size: 13px;
   font-family: inherit;
@@ -48,7 +117,7 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-  background-color: #3a3d41;
+  background-color: var(--bg-hover);
 }
 
 .btn:disabled {
@@ -58,7 +127,7 @@ body {
 
 .status {
   margin-left: auto;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -70,8 +139,8 @@ body {
   display: flex;
   gap: 2px;
   padding: 0 6px;
-  background-color: #252526;
-  border-bottom: 1px solid #3c3c3c;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   overflow-x: auto;
 }
@@ -79,7 +148,7 @@ body {
 .tab {
   border: none;
   background-color: transparent;
-  color: #969696;
+  color: var(--text-muted);
   padding: 8px 14px;
   font-size: 13px;
   font-family: inherit;
@@ -89,12 +158,12 @@ body {
 }
 
 .tab:hover {
-  color: #e6e6e6;
+  color: var(--text-primary);
 }
 
 .tab.active {
-  color: #e6e6e6;
-  border-bottom-color: #0e639c;
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
 }
 
 /* Редактор */
@@ -109,7 +178,7 @@ body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #9d9d9d;
+  color: var(--text-secondary);
 }
 
 /* Главная область: редактор + панель правки */
@@ -127,11 +196,11 @@ body {
 /* Панель правки (формы добавления/удаления) */
 .edit-panel {
   flex: 0 0 360px;
-  background-color: #252526;
-  border-left: 1px solid #3c3c3c;
+  background-color: var(--bg-surface);
+  border-left: 1px solid var(--border);
   padding: 10px 12px;
   overflow-y: auto;
-  color: #e6e6e6;
+  color: var(--text-primary);
 }
 
 .edit-panel h3 {
@@ -148,14 +217,14 @@ body {
 }
 
 .btn-undo {
-  background-color: #3a3d41;
-  color: #d4d4d4;
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
   padding: 2px 8px;
   font-size: 11px;
 }
 
 .btn-undo:hover:not(:disabled) {
-  background-color: #4a4d51;
+  background-color: var(--bg-input);
 }
 
 .btn-undo:disabled {
@@ -166,7 +235,7 @@ body {
 .edit-panel h4 {
   margin: 14px 0 6px 0;
   font-size: 12px;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -182,14 +251,14 @@ body {
   flex-direction: column;
   gap: 3px;
   font-size: 12px;
-  color: #c4c4c4;
+  color: var(--text-secondary);
 }
 
 .edit-form input,
 .edit-form select {
-  background-color: #3c3c3c;
-  border: 1px solid #555;
-  color: #e6e6e6;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
   padding: 4px 6px;
   font-size: 13px;
   font-family: inherit;
@@ -207,8 +276,8 @@ body {
 }
 
 .edit-err {
-  background-color: #5a1d1d;
-  color: #ffb4b4;
+  background-color: var(--error-bg);
+  color: var(--error-fg);
   padding: 6px 8px;
   border-radius: 2px;
   font-size: 12px;
@@ -216,13 +285,13 @@ body {
 }
 
 .edit-diff pre {
-  background-color: #1e1e1e;
+  background-color: var(--bg-app);
   padding: 8px;
   margin: 6px 0;
   font-size: 11px;
   max-height: 260px;
   overflow: auto;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--border);
 }
 
 .diff-line {
@@ -234,14 +303,14 @@ body {
 
 .diff-line.diff-plus,
 .diff-line.diff-\+ {
-  background-color: #2d4a2d;
-  color: #9bd89b;
+  background-color: var(--diff-plus-bg);
+  color: var(--diff-plus-fg);
 }
 
 .diff-line.diff-minus,
 .diff-line.diff\- {
-  background-color: #4a2d2d;
-  color: #d89b9b;
+  background-color: var(--diff-minus-bg);
+  color: var(--diff-minus-fg);
 }
 
 .edit-list ul {
@@ -261,8 +330,8 @@ body {
 
 .btn-mini {
   border: none;
-  background-color: #5a1d1d;
-  color: #ffb4b4;
+  background-color: var(--error-bg);
+  color: var(--error-fg);
   cursor: pointer;
   padding: 1px 7px;
   border-radius: 2px;
@@ -270,7 +339,7 @@ body {
 }
 
 .btn-mini:hover {
-  background-color: #7a2424;
+  background-color: var(--error-bg-hover);
 }
 
 /* Переключатель режима (Словари | Транскрипт) */
@@ -278,15 +347,15 @@ body {
   display: flex;
   gap: 0;
   padding: 0 10px;
-  background-color: #1e1e1e;
-  border-bottom: 1px solid #3c3c3c;
+  background-color: var(--bg-app);
+  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
 .mode-btn {
   border: none;
   background: transparent;
-  color: #969696;
+  color: var(--text-muted);
   padding: 8px 18px;
   font-size: 13px;
   font-family: inherit;
@@ -295,12 +364,12 @@ body {
 }
 
 .mode-btn:hover {
-  color: #e6e6e6;
+  color: var(--text-primary);
 }
 
 .mode-btn.active {
-  color: #e6e6e6;
-  border-bottom-color: #0e639c;
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
 }
 
 /* Transcript view */
@@ -328,7 +397,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #3c3c3c;
+  border-right: 1px solid var(--border);
 }
 
 .transcript-pane:last-child {
@@ -340,10 +409,10 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background-color: #252526;
-  border-bottom: 1px solid #3c3c3c;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   font-size: 12px;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   flex: 0 0 auto;
 }
 
@@ -362,9 +431,9 @@ body {
   margin-right: 2px;
 }
 
-.legend .dot.oov { background: rgba(220, 60, 60, 0.7); }
-.legend .dot.will-replace { background: rgba(220, 200, 60, 0.7); }
-.legend .dot.filler { background: rgba(140, 140, 140, 0.7); }
+.legend .dot.oov { background: var(--legend-oov); }
+.legend .dot.will-replace { background: var(--legend-will-replace); }
+.legend .dot.filler { background: var(--legend-filler); }
 
 .pane-actions {
   display: inline-flex;
@@ -377,16 +446,16 @@ body {
   flex: 0 0 auto;
   max-height: 35%;
   overflow-y: auto;
-  background-color: #252526;
-  border-top: 1px solid #3c3c3c;
+  background-color: var(--bg-surface);
+  border-top: 1px solid var(--border);
   padding: 8px 12px;
-  color: #e6e6e6;
+  color: var(--text-primary);
   font-size: 12px;
 }
 
 .stats-empty {
   padding: 16px;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -399,24 +468,24 @@ body {
 }
 
 .stats-summary span {
-  color: #c4c4c4;
+  color: var(--text-secondary);
 }
 
 .stats-summary b {
-  color: #fff;
+  color: var(--text-bright);
 }
 
 .stats-stale {
-  color: #d4a85a !important;
+  color: var(--warn) !important;
 }
 
 .stats-stale-badge, .badge-stale {
-  color: #d4a85a;
+  color: var(--warn);
   font-size: 12px;
 }
 
 .stats-status {
-  color: #9d9d9d;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -428,20 +497,20 @@ body {
 
 .stats-table th {
   text-align: left;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   font-weight: normal;
   padding: 3px 8px;
-  border-bottom: 1px solid #3c3c3c;
+  border-bottom: 1px solid var(--border);
 }
 
 .stats-table td {
   padding: 3px 8px;
-  border-bottom: 1px solid #2d2d30;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .stats-table td.mono {
   font-family: "Consolas", "Menlo", monospace;
-  color: #9d9d9d;
+  color: var(--text-secondary);
 }
 
 .stats-panel details {
@@ -450,6 +519,13 @@ body {
 
 .stats-panel summary {
   cursor: pointer;
-  color: #9d9d9d;
+  color: var(--text-secondary);
   padding: 4px 0;
+}
+
+/* Переключатель темы в тулбаре */
+.theme-toggle {
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 10px;
 }

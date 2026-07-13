@@ -7,8 +7,16 @@ import { useTheme } from "../store/theme";
 import { applyRules } from "../engine/rules";
 import { exportStatsMarkdown } from "../lib/stats-export";
 import { writeFile } from "../lib/fs";
+import { tokenize } from "../engine/tokenizer";
 import type { Settings, FillerFile, ReplacementsFile, WhitelistFile } from "../types/dictionaries";
 import type { Decoration, DecorationCategory } from "../engine/types";
+import {
+  ACTIONS_FOR_SELECTION,
+  ACTION_LABEL,
+  type ContextAction,
+  type Selection,
+} from "./contextMenuActions";
+import { ContextActionDialog } from "./ContextActionDialog";
 
 // Цвета подсветки по категории (idea §9.2: красный=OOV, жёлтый=будет-заменено).
 // Alpha повышена для читаемости на тёмном фоне; добавлены рамки/зачёркивание.
@@ -139,6 +147,10 @@ export function TranscriptView() {
   const decosRef = useRef<string[]>([]);
   const [applying, setApplying] = useState(false);
 
+  // Контекстное меню ПКМ → словарь (этап 3). Какое действие и выделение открыто.
+  const [ctxAction, setCtxAction] = useState<ContextAction | null>(null);
+  const [ctxSelection, setCtxSelection] = useState<Selection | null>(null);
+
   const onOrigMount: OnMount = useCallback((ed, monaco) => {
     origEditorRef.current = ed;
     monacoRef.current = monaco;
@@ -154,6 +166,58 @@ export function TranscriptView() {
         style.textContent = css;
         document.head.appendChild(style);
       })();
+
+    // Контекстное меню ПКМ → словарь (этап 3).
+    // Регистрируем одно действие-«обёртку», показывающее подменю доступных операций
+    // по выделению (слово → 5 действий; фраза → 3).
+    ed.addAction({
+      id: "tco-context-dictionary",
+      label: "📋 Словарь…",
+      contextMenuGroupId: "tco-dictionary",
+      contextMenuOrder: 1,
+      run: (editor) => {
+        // Берём выделение; если нет — слово под курсором.
+        let sel = editor.getSelection();
+        let model = editor.getModel();
+        if (!sel || !model) return;
+
+        let text: string;
+        if (sel.isEmpty()) {
+          // Нет выделения — берём слово под курсором через модель.
+          const pos = editor.getPosition();
+          if (!pos) return;
+          const word = model.getWordAtPosition(pos);
+          if (!word) return;
+          text = word.word;
+        } else {
+          text = model.getValueInRange(sel);
+        }
+        text = text.trim();
+        if (!text) return;
+
+        // Классификация: одно слово или фраза (несколько токенов).
+        const tokens = tokenize(text);
+        const isPhrase = tokens.length > 1;
+
+        const selection: Selection = { text, isPhrase };
+        const actions = ACTIONS_FOR_SELECTION(selection);
+
+        // Быстрый путь: единственное доступное действие — применяем сразу
+        // (whitelist для одиночного слова, например). Иначе показываем меню выбора.
+        if (actions.length === 1) {
+          setCtxSelection(selection);
+          setCtxAction(actions[0]);
+          return;
+        }
+
+        // Несколько действий — показываем всплывающее меню выбора у курсора.
+        // Зависит только от DOM, не от состояния React (колбэк передаётся наружу).
+        showContextMenuPopup(editor, selection, actions, (a) => {
+          setCtxSelection(selection);
+          setCtxAction(a);
+        });
+      },
+    });
   }, []);
 
   const onCleanMount: OnMount = useCallback((ed, monaco) => {
@@ -279,6 +343,14 @@ export function TranscriptView() {
         </div>
       </div>
       <StatsPanel />
+      <ContextActionDialog
+        action={ctxAction}
+        selection={ctxSelection}
+        onClose={() => {
+          setCtxAction(null);
+          setCtxSelection(null);
+        }}
+      />
     </div>
   );
 }
@@ -329,4 +401,83 @@ function lineForTime(text: string, time: string): number | null {
     if (m && m[1] === time) return i + 1;
   }
   return null;
+}
+
+// --- контекстное меню ПКМ → словарь -----------------------------------------
+
+// Всплывающее меню выбора действия у позиции курсора (этап 3.2).
+// Простой DOM-попап: закрытие по клику вне меню или Esc, по выбору — колбэк.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function showContextMenuPopup(
+  editor: any,
+  selection: Selection,
+  actions: ContextAction[],
+  onPick: (a: ContextAction) => void,
+) {
+  // Удаляем возможно-существующий попап (на всякий случай).
+  document.querySelectorAll(".ctx-popup").forEach((el) => el.remove());
+
+  const popup = document.createElement("div");
+  popup.className = "ctx-popup";
+
+  const title = document.createElement("div");
+  title.className = "ctx-popup-title";
+  title.textContent = `«${selection.text}»`;
+  popup.appendChild(title);
+
+  for (const a of actions) {
+    const item = document.createElement("div");
+    item.className = "ctx-popup-item";
+    item.textContent = ACTION_LABEL[a];
+    item.addEventListener("click", () => {
+      popup.remove();
+      document.removeEventListener("mousedown", onOutside, true);
+      onPick(a);
+    });
+    popup.appendChild(item);
+  }
+
+  // Позиция: там, где был клик (contextmenu-событие). Monaco экранирует coords,
+  // поэтому используем screen-координаты из последнего contextmenu-события.
+  // Запасной вариант — позиция курсора редактора, спроецированная в screen.
+  const pos = editor.getPosition();
+  const coords =
+    pos && typeof editor.getScrolledVisiblePosition === "function"
+      ? editor.getScrolledVisiblePosition(pos)
+      : null;
+  // DOM-координаты Monaco-контейнера.
+  const domNode = editor.getDomNode();
+  let left = 100;
+  let top = 100;
+  if (domNode) {
+    const rect = domNode.getBoundingClientRect();
+    if (coords) {
+      left = rect.left + window.scrollX + coords.left;
+      top = rect.top + window.scrollY + coords.top;
+    } else {
+      left = rect.left + window.scrollX + 40;
+      top = rect.top + window.scrollY + 40;
+    }
+  }
+  popup.style.left = `${left}px`;
+  popup.style.top = `${top}px`;
+
+  document.body.appendChild(popup);
+
+  function onOutside(e: MouseEvent) {
+    if (!popup.contains(e.target as Node)) {
+      popup.remove();
+      document.removeEventListener("mousedown", onOutside, true);
+    }
+  }
+  document.addEventListener("mousedown", onOutside, true);
+
+  function onEsc(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      popup.remove();
+      document.removeEventListener("mousedown", onOutside, true);
+      document.removeEventListener("keydown", onEsc, true);
+    }
+  }
+  document.addEventListener("keydown", onEsc, true);
 }

@@ -529,3 +529,164 @@ body {
   line-height: 1;
   padding: 4px 10px;
 }
+
+/* ===== Контекстное меню ПКМ → словарь (этап 3) ===== */
+
+/* Всплывающее меню выбора действия (DOM-попап у курсора) */
+.ctx-popup {
+  position: absolute;
+  z-index: 10000;
+  min-width: 220px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.ctx-popup-title {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 2px;
+  font-family: "Consolas", "Menlo", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.ctx-popup-item {
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ctx-popup-item:hover {
+  background-color: var(--bg-hover);
+}
+
+/* Модалка действия */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+}
+
+.ctx-dialog {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.ctx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ctx-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ctx-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.ctx-close:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ctx-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-soft);
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.ctx-target-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ctx-target-value {
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 13px;
+  color: var(--text-bright);
+  word-break: break-all;
+}
+
+.ctx-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.ctx-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ctx-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ctx-form input,
+.ctx-form select {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 2px;
+}
+
+.ctx-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.ctx-done {
+  color: var(--diff-plus-fg);
+  font-size: 12px;
+}

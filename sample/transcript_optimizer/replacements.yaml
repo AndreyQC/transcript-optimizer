@@ -75,14 +75,20 @@ replacements:
   replacement_rule_012:
     to: Opus
     label: brand_product
+    description: Старшая модель Anthropic Claude
     from:
     - опус
+    - Опус
+    - opus
   replacement_rule_013:
     to: "Deck buddy"
     label: tech_term
-    description: Утилита создания презентаций
+    description: Внутренний тул для создания презентаций по тексту доклада
     from:
-    - Декбади
+    - Deck buddy
+    - DeckBody
+    - Декбаде
+    - дек бади
   replacement_rule_014:
     to: LangChain
     label: tech_term
@@ -94,7 +100,7 @@ replacements:
     from:
     - N8N
   replacement_rule_016:
-    to: Defy
+    to: Dify
     label: tech_term
     from:
     - DeFiom
@@ -136,6 +142,55 @@ replacements:
     - LLM
     - ллм
     - элэлэм
+  replacement_rule_024:
+    to: Cursor
+    label: tech_term
+    description: IDE с интегрированным AI-ассистентом
+    from:
+    - курсор
+    - тундра
+    - cursor
+    - курсоров
+  replacement_rule_025:
+    to: Codex
+    label: tech_term
+    description: LLM от OpenAI для написания кода
+    from:
+    - кодекс
+    - кодекс ЧПТ
+    - codex
+  replacement_rule_026:
+    to: Markdown
+    label: tech_term
+    description: Язык разметки
+    from:
+    - маркдаун
+    - марк даун
+    - markdown
+  replacement_rule_027:
+    to: Composer
+    label: tech_term
+    description: Режим агентской работы в Cursor
+    from:
+    - композер
+    - композерах
+    - composer
+  replacement_rule_028:
+    to: Hermes
+    label: tech_term
+    description: Самообучающийся агент
+    from:
+    - гермес
+    - гермесами
+    - hermes
+  replacement_rule_029:
+    to: Runbook
+    label: tech_term
+    description: Детерминированная последовательность действий, выполняемая человеком и/или агентом
+    from:
+    - ранбук
+    - ранбуки
+    - runbook
 lemma_replacements:
   lemma_rule_001:
     to: Slack

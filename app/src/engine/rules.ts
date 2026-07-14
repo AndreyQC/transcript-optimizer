@@ -223,10 +223,10 @@ function cleanUtterance(
     if (ctx.replaceIdx.has(key) || (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key))) continue;
     if (ctx.wl.has(key)) continue;
     if (tok.value.length < ctx.minWordLen) {
-      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "short-garbage");
+      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "short-garbage", undefined, tok.value);
       stats.suspect += 1;
     } else {
-      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "oov");
+      addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "oov", undefined, tok.value);
       stats.suspect += 1;
     }
   }
@@ -243,8 +243,9 @@ function addDecoration(
   endCol: number,
   category: DecorationCategory,
   note?: string,
+  text?: string,
 ): void {
-  out.push({ lineNo, startCol, endCol, category, note });
+  out.push({ lineNo, startCol, endCol, category, note, text });
 }
 
 function addHit(

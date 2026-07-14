@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri + React + Typescript</title>
+    <!-- Анти-FOUC: ставим data-theme до первого рендера, чтобы вспышка тёмной
+         темы не возникала при сохранённой светлой. Ключ должен дословно
+         совпадать с STORAGE_KEY в src/store/theme.ts. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("transcript-optimizer.theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        } catch (e) { /* noop */ }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

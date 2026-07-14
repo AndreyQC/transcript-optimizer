@@ -10,14 +10,17 @@ import { create } from "zustand";
 // виден. Останавливать стрим при размонтировании НЕ нужно (onDelta пишет в store,
 // а не в локальный state).
 
-export type StreamTarget = "raw" | "cleaned" | null;
-export type SourceTab = "raw" | "cleaned" | "diff";
+export type StreamTarget = "raw" | "cleaned" | "collapsed" | null;
+export type SourceTab = "raw" | "cleaned" | "collapsed" | "diff";
+// Источник саммари (без diff). Удобен для map-логики по 3 источникам.
+export type Source = "raw" | "cleaned" | "collapsed";
 export type ViewMode = "stream" | "result";
 
 interface SummaryState {
   // Тексты результатов (накапливаются по onDelta во время стриминга).
   summaryRaw: string;
   summaryCleaned: string;
+  summaryCollapsed: string;
   // Какой источник сейчас стримится (null = ничего).
   streaming: StreamTarget;
   // Активная вкладка результата (верхний уровень + под-вкладка).
@@ -27,6 +30,7 @@ interface SummaryState {
   // Мутаторы — SummaryView зовёт их вместо локальных setState.
   setSummaryRaw: (updater: string | ((prev: string) => string)) => void;
   setSummaryCleaned: (updater: string | ((prev: string) => string)) => void;
+  setSummaryCollapsed: (updater: string | ((prev: string) => string)) => void;
   setStreaming: (target: StreamTarget) => void;
   setSourceTab: (tab: SourceTab) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -38,6 +42,7 @@ interface SummaryState {
 export const useSummary = create<SummaryState>((set) => ({
   summaryRaw: "",
   summaryCleaned: "",
+  summaryCollapsed: "",
   streaming: null,
   sourceTab: "raw",
   viewMode: "stream",
@@ -52,6 +57,11 @@ export const useSummary = create<SummaryState>((set) => ({
       summaryCleaned:
         typeof updater === "function" ? updater(s.summaryCleaned) : updater,
     })),
+  setSummaryCollapsed: (updater) =>
+    set((s) => ({
+      summaryCollapsed:
+        typeof updater === "function" ? updater(s.summaryCollapsed) : updater,
+    })),
   setStreaming: (target) => set({ streaming: target }),
   setSourceTab: (tab) => set({ sourceTab: tab }),
   setViewMode: (mode) => set({ viewMode: mode }),
@@ -60,6 +70,7 @@ export const useSummary = create<SummaryState>((set) => ({
     set({
       summaryRaw: "",
       summaryCleaned: "",
+      summaryCollapsed: "",
       streaming: null,
     }),
 }));

@@ -78,17 +78,18 @@ replacements:
     description: Старшая модель Anthropic Claude
     from:
     - опус
-    - Опус
+    - опусе
     - opus
   replacement_rule_013:
-    to: "Deck buddy"
+    to: Deck-buddy
     label: tech_term
     description: Внутренний тул для создания презентаций по тексту доклада
     from:
-    - Deck buddy
+    - Deck-buddy
     - DeckBody
     - Декбаде
     - дек бади
+    - Декбади
   replacement_rule_014:
     to: LangChain
     label: tech_term

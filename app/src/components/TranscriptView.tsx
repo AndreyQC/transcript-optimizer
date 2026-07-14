@@ -10,6 +10,7 @@ import { writeFile } from "../lib/fs";
 import { addEntry } from "../lib/yaml-edit";
 import { tokenize, norm } from "../engine/tokenizer";
 import { buildOovRows } from "../engine/oov-stats";
+import { collapseTimemarks } from "../engine/collapse";
 import { OovStatsGrid } from "./OovStatsGrid";
 import type { Settings, FillerFile, ReplacementsFile, WhitelistFile } from "../types/dictionaries";
 import type { Decoration, DecorationCategory } from "../engine/types";
@@ -131,6 +132,8 @@ export function TranscriptView() {
   const transcript = useTranscript((s) => s.transcript);
   const cleanResult = useTranscript((s) => s.cleanResult);
   const setCleanResult = useTranscript((s) => s.setCleanResult);
+  const collapseEnabled = useTranscript((s) => s.collapseEnabled);
+  const setCollapseEnabled = useTranscript((s) => s.setCollapseEnabled);
 
   // Данные словарей для applyRules (подписка на стабильные поля, без новых объектов).
   const settings = useDictionaries((s) => (s.entries.find((e) => e.kind === "settings")?.data as Settings | null) ?? null);
@@ -168,6 +171,16 @@ export function TranscriptView() {
   const oovRows = useMemo(
     () => (cleanResult ? buildOovRows(cleanResult) : []),
     [cleanResult],
+  );
+
+  // Отображаемый очищенный текст: свёрнутая проекция по кнопке «Свернуть реплики».
+  // collapseTimemarks — чистая функция, НЕ мутирует cleanResult.cleanedText.
+  const cleanedShown = useMemo(
+    () =>
+      collapseEnabled && cleanResult
+        ? collapseTimemarks(cleanResult.cleanedText)
+        : cleanResult?.cleanedText ?? "",
+    [cleanResult, collapseEnabled],
   );
 
   // Батч-добавление выделенных слов в detector_whitelist.yaml (common_words).
@@ -437,6 +450,14 @@ export function TranscriptView() {
               <button onClick={handleSync} className="btn-mini" disabled={!cleanResult} title="Подскроллить вторую панель к той же реплике по таймштампу">
                 ⇆ Синхронизировать
               </button>
+              <button
+                onClick={() => setCollapseEnabled(!collapseEnabled)}
+                className={`btn-mini${collapseEnabled ? " active" : ""}`}
+                disabled={!cleanResult}
+                title="Свернуть избыточные временные метки в блоках одного спикера"
+              >
+                ⤵ Свернуть реплики
+              </button>
             </span>
           </div>
           <Editor
@@ -444,7 +465,7 @@ export function TranscriptView() {
             language="plaintext"
             theme={themeMode === "dark" ? "vs-dark" : "light"}
             path={transcript.path + "#clean"}
-            value={cleanResult?.cleanedText ?? ""}
+            value={cleanedShown}
             onMount={onCleanMount}
             options={{
               readOnly: true,

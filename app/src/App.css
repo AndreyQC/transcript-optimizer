@@ -342,6 +342,14 @@ body {
   background-color: var(--error-bg-hover);
 }
 
+/* Активное состояние toggle-кнопки (например, «Свернуть реплики»): включено.
+   Перекрывает дефолтный error-фон акцентом, чтобы было видно состояние. */
+.btn-mini.active,
+.btn-mini.active:hover {
+  background-color: var(--accent);
+  color: var(--text-bright);
+}
+
 /* Переключатель режима (Словари | Транскрипт) */
 .mode-switch {
   display: flex;
@@ -1251,4 +1259,16 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Переключатель пары Diff (raw↔cleaned / raw↔collapsed / cleaned↔collapsed). */
+.diff-pair-selector {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-surface);
 }

@@ -342,6 +342,14 @@ body {
   background-color: var(--error-bg-hover);
 }
 
+/* Активное состояние toggle-кнопки (например, «Свернуть реплики»): включено.
+   Перекрывает дефолтный error-фон акцентом, чтобы было видно состояние. */
+.btn-mini.active,
+.btn-mini.active:hover {
+  background-color: var(--accent);
+  color: var(--text-bright);
+}
+
 /* Переключатель режима (Словари | Транскрипт) */
 .mode-switch {
   display: flex;
@@ -439,6 +447,162 @@ body {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+}
+
+/* Вкладки левой панели (Оригинал / Статистика) */
+.pane-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  min-height: 28px;
+}
+
+.pane-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.pane-tab:hover {
+  color: var(--text-primary);
+}
+
+.pane-tab.active {
+  color: var(--text-bright);
+  border-bottom-color: var(--accent);
+}
+
+.pane-tab-legend {
+  margin-left: auto;
+  padding-right: 4px;
+}
+
+.pane-tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-tab-body.hidden {
+  display: none;
+}
+
+/* Грид OOV (вкладка «Статистика») */
+.oov-grid-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--bg-surface);
+}
+
+.oov-grid-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.oov-grid th,
+.oov-grid td {
+  padding-left: 10px;
+}
+
+.oov-grid tbody tr {
+  cursor: pointer;
+}
+
+.oov-grid tbody tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.oov-row-selected {
+  background-color: var(--bg-elevated);
+}
+
+.oov-row-selected:hover {
+  background-color: var(--bg-hover);
+}
+
+.oov-col-check {
+  width: 30px;
+  text-align: center;
+}
+
+.oov-col-count {
+  width: 56px;
+  text-align: right;
+}
+
+.oov-col-type {
+  width: 64px;
+  white-space: nowrap;
+}
+
+.oov-grid td.mono {
+  font-family: "Consolas", "Menlo", monospace;
+}
+
+.oov-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-bright);
+}
+
+.oov-badge-oov {
+  background: var(--legend-oov);
+}
+
+.oov-badge-short-garbage {
+  background: var(--legend-filler);
+}
+
+.oov-empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
+}
+
+.oov-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background-color: var(--bg-surface);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.oov-selected-count {
+  color: var(--text-secondary);
+}
+
+.oov-selected-count b {
+  color: var(--text-bright);
+}
+
+.oov-footer-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.oov-status {
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 
 /* Статистика */
@@ -1095,4 +1259,16 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Переключатель пары Diff (raw↔cleaned / raw↔collapsed / cleaned↔collapsed). */
+.diff-pair-selector {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-surface);
 }

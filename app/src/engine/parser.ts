@@ -10,8 +10,9 @@ import type { ParsedTranscript, SpeakerBlock, Utterance } from "./types";
 // Якорь — lineNo (1-based), таймштамп НЕ ключ (дубли встречаются, вкл. cross-speaker).
 // Speaker «(голос N)» отделяется от имени.
 
-const RE_SPEAKER = /^(.+?)(?:\s*\(голос\s+(\d+)\))?\s*:\s*$/;
-const RE_UTTERANCE = /^\[(\d{2}:\d{2}:\d{2})\]\s+(.*)$/;
+// Экспортируем — переиспользуются в engine/collapse.ts (единый источник формата).
+export const RE_SPEAKER = /^(.+?)(?:\s*\(голос\s+(\d+)\))?\s*:\s*$/;
+export const RE_UTTERANCE = /^\[(\d{2}:\d{2}:\d{2})\]\s+(.*)$/;
 
 type State = "header" | "speaker" | "utterance";
 

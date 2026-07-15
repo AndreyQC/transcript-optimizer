@@ -42,6 +42,11 @@ export interface Decoration {
   endCol: number; // 1-based колонка конца (эксклюзивно)
   category: DecorationCategory;
   note?: string; // например, id сработавшего правила
+  // Исходное написание токена (как в тексте, без нормализации). Заполняется
+  // для oov/short-garbage — чтобы панель статистики не восстанавливала слово
+  // по координатам в raw (хрупко из-за CRLF/префиксов). Для остальных категорий
+  // может отсутствовать.
+  text?: string;
 }
 
 export interface ReplacementHit {

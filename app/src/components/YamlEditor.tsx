@@ -27,6 +27,10 @@ export function YamlEditor() {
     s.entries.find((e) => e.kind === activeKind),
   );
   const editRaw = useDictionaries((s) => s.editRaw);
+  // Запрос на прокрутку к правилу из панели «Похожие from» (см. similarity.ts).
+  // После выполнения — clearPendingScroll, чтобы не прокрутить повторно.
+  const pendingScroll = useDictionaries((s) => s.pendingScroll);
+  const clearPendingScroll = useDictionaries((s) => s.clearPendingScroll);
   // Тема: vs-dark / light. @monaco-editor/react сам вызывает setTheme при смене.
   const mode = useTheme((s) => s.mode);
   // Подписываемся на entries (стабильная ссылка массива), а Set категорий
@@ -45,6 +49,33 @@ export function YamlEditor() {
     editorRef.current = ed;
     monacoRef.current = monaco;
   }, []);
+
+  // Прокрутка к запрошенному правилу — когда `pendingScroll` для активного kind.
+  // Триггерится только при смене `pendingScroll` (или activeKind), а не на каждый
+  // ререндер — Monaco.revealLineInCenter поднимет выделение и кинет каретку.
+  useEffect(() => {
+    if (!pendingScroll) return;
+    const ed = editorRef.current;
+    if (!ed || pendingScroll.kind !== activeKind) return;
+    // sanity-check: модель должна существовать.
+    const model = ed.getModel?.();
+    if (!model) return;
+    const lineCount = model.getLineCount?.();
+    if (typeof lineCount === "number" && pendingScroll.line > lineCount) {
+      // строка «уплыла» (raw поменялся между постановкой и прокруткой) — тихо
+      // сбрасываем запрос.
+      clearPendingScroll();
+      return;
+    }
+    try {
+      ed.revealLineInCenter(pendingScroll.line);
+      ed.setPosition?.({ lineNumber: pendingScroll.line, column: 1 });
+      ed.focus?.();
+    } catch {
+      // не критично — пользователь всё равно видит панель.
+    }
+    clearPendingScroll();
+  }, [pendingScroll, activeKind, clearPendingScroll]);
 
   // Повторная валидация при изменении raw активного файла или состава категорий.
   useEffect(() => {

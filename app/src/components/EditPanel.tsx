@@ -1,10 +1,22 @@
 import { useMemo, useState } from "react";
-import { useDictionaries, getGlossaryCategories } from "../store/dictionaries";
+import {
+  useDictionaries,
+  getGlossaryCategories,
+  getSimilarityThresholds,
+} from "../store/dictionaries";
 import {
   addEntry,
   deleteEntry,
+  dedupByTo,
+  findRuleLine,
   type AddEntryInput,
 } from "../lib/yaml-edit";
+import { findSimilar } from "../lib/similarity";
+import {
+  SimilarFromPanel,
+  buildFromPool,
+  type SimilarCandidateRow,
+} from "./SimilarFromPanel";
 import type { DictKind } from "../types/dictionaries";
 
 // Превью diff: какие строки добавились/удалились.
@@ -57,17 +69,30 @@ export function EditPanel() {
   );
   const applyEdit = useDictionaries((s) => s.applyEdit);
   const undoFn = useDictionaries((s) => s.undo);
+  const setActive = useDictionaries((s) => s.setActive);
+  const setPendingScroll = useDictionaries((s) => s.setPendingScroll);
   const canUndo = useDictionaries((s) =>
     activeKind ? (s.undoState.stacks[activeKind] ?? []).length > 0 : false,
   );
   // Set категорий вычисляем в useMemo (селектор с новым Set ломает ре-рендер).
   const entries = useDictionaries((s) => s.entries);
   const cats = useMemo(() => getGlossaryCategories(entries), [entries]);
+  const thresholds = useMemo(() => getSimilarityThresholds(entries), [entries]);
 
   const [form, setForm] = useState<FormState>(empty);
   const [pending, setPending] = useState<string | null>(null); // превью нового raw
   const [pendingBefore, setPendingBefore] = useState<string>("");
   const [err, setErr] = useState<string>("");
+
+  // Режим «append to existing rule» — кнопка «Добавить в это правило».
+  // Здесь хранится и контекст: какое именно значение из from[] пытаемся дописать.
+  const [appendTarget, setAppendTarget] = useState<{
+    ruleKey: string;
+    section: "from" | "from_lemmas";
+    newFrom: string; // какое именно from из ввода пользователя дописываем
+  } | null>(null);
+  // «Игнорировать» — помнит на время жизни компонента (на активной вкладке).
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   function handleUndo() {
     if (!activeKind) return;
@@ -75,16 +100,46 @@ export function EditPanel() {
     if (!ok) setErr("Нечего отменять");
   }
 
-  // Список существующих записей для удаления (упрощённо: только replacements/glossary).
-  const existingKeys = useMemo<string[]>(() => {
+  // Дедупликация по `to` (см. 20260715_003_dedup_by_to.md).
+  // Сравнение идёт по lowercase+trim; первое правило по ключу побеждает,
+  // остальные удаляются. Через существующий pending/Превью/Применить —
+  // никаких новых кнопок в форме.
+  function handleDedup() {
+    setErr("");
+    if (!activeEntry) return;
+    const res = dedupByTo(activeEntry.raw);
+    if (!res.ok) {
+      setErr(res.error ?? "ошибка дедупликации");
+      setPending(null);
+      return;
+    }
+    if (res.noop) {
+      setErr("Дублей по to нет — словарь чист");
+      setPending(null);
+      return;
+    }
+    setPendingBefore(activeEntry.raw);
+    setPending(res.raw);
+  }
+
+  // Список существующих записей для удаления (только replacements/glossary).
+  // Для replacements и lemma_replacements элемент — { key, to? }, чтобы в UI
+  // вывести «rule_key (to)» (фича 2026-07-15: показ канонической формы рядом).
+  // Для glossary и lemma_irregular — строки (там `to` нет).
+  type ListItem = string | { key: string; to?: string };
+  const existingKeys = useMemo<ListItem[]>(() => {
     if (!activeEntry?.data) return [];
     const d = activeEntry.data as Record<string, unknown>;
     if (activeKind === "replacements") {
-      const out: string[] = [];
-      const r = (d.replacements as Record<string, unknown>) ?? {};
-      const l = (d.lemma_replacements as Record<string, unknown>) ?? {};
-      out.push(...Object.keys(r).map((k) => k));
-      out.push(...Object.keys(l).map((k) => `${k} (lemma)`));
+      const out: ListItem[] = [];
+      const r = (d.replacements as Record<string, { to?: string }>) ?? {};
+      for (const [k, rule] of Object.entries(r)) {
+        out.push({ key: k, to: rule.to });
+      }
+      const l = (d.lemma_replacements as Record<string, { to?: string }>) ?? {};
+      for (const [k, rule] of Object.entries(l)) {
+        out.push({ key: `${k} (lemma)`, to: rule.to });
+      }
       return out;
     }
     if (activeKind === "glossary") {
@@ -96,10 +151,52 @@ export function EditPanel() {
     return [];
   }, [activeEntry, activeKind]);
 
+  // Похожие `from` — берём ПЕРВОЕ непустое значение из формы (то, что
+  // пользователь сейчас вводит через запятую). Если введено несколько — мы
+  // предупреждаем только по первому (UX-компромисс: split+zip был бы шумным).
+  // Только для replacements — для glossary/lemma_irregular панель не нужна.
+  const similarRows = useMemo<SimilarCandidateRow[]>(() => {
+    if (activeKind !== "replacements") return [];
+    const firstInputFrom = form.from
+      .split(",")
+      .map((s) => s.trim())
+      .find(Boolean);
+    if (!firstInputFrom) return [];
+    const section: "from" | "from_lemmas" = form.isLemma ? "from_lemmas" : "from";
+    const pool = buildFromPool(entries, section);
+    if (pool.length === 0) return [];
+    const isPhrase = firstInputFrom.includes(" ");
+    const threshold = isPhrase ? thresholds.phrase : thresholds.word;
+    const hits = findSimilar(firstInputFrom, pool, threshold);
+    return hits.map((h) => ({
+      ruleKey: h.sourceKey,
+      to: h.to,
+      value: h.candidate.valueNorm,
+      section,
+      score: h.score,
+    }));
+  }, [activeKind, form.from, form.isLemma, entries, thresholds]);
+
+  // Отфильтрованный (по dismissed) список для панели.
+  const visibleSimilarRows = similarRows.filter((r) => !dismissed.has(r.ruleKey));
+
   function buildAddInput(): AddEntryInput | null {
     if (!activeKind) return null;
     switch (activeKind) {
-      case "replacements":
+      case "replacements": {
+        // Режим append: вместо создания нового правила — дописать первое from в
+        // существующее правило. Остальные from отбрасываются (по одному — это
+        // соответствует UX-кнопке «Добавить в это правило»).
+        if (appendTarget) {
+          const trimmed = appendTarget.newFrom.trim();
+          if (!trimmed) return null;
+          return {
+            kind: "replacements",
+            appendFromToRule: appendTarget.ruleKey,
+            appendFromSection: appendTarget.section,
+            from: [trimmed],
+          };
+        }
         return {
           kind: "replacements",
           isLemma: form.isLemma,
@@ -108,6 +205,7 @@ export function EditPanel() {
           description: form.description.trim() || undefined,
           from: form.from.split(",").map((s) => s.trim()).filter(Boolean),
         };
+      }
       case "glossary":
         return {
           kind: "glossary",
@@ -146,6 +244,8 @@ export function EditPanel() {
     applyEdit(activeKind, pending);
     setForm(empty);
     setPending(null);
+    setAppendTarget(null);
+    setDismissed(new Set());
   }
 
   function handleDelete(key: string) {
@@ -170,6 +270,16 @@ export function EditPanel() {
     <aside className="edit-panel">
       <div className="edit-panel-header">
         <h3>Правка словаря</h3>
+        {activeKind === "replacements" && (
+          <button
+            onClick={handleDedup}
+            className="btn-mini"
+            disabled={!!pending || !activeEntry}
+            title="Слить правила с одинаковым `to` (lowercase+trim; первое по ключу побеждает)"
+          >
+            ⚙ Дедуплицировать
+          </button>
+        )}
         <button
           onClick={handleUndo}
           className="btn-mini btn-undo"
@@ -218,6 +328,61 @@ export function EditPanel() {
                   {form.isLemma ? "from_lemmas (через запятую)" : "from (через запятую)"}
                   <input value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} />
                 </label>
+
+                {appendTarget && (
+                  <div className="edit-append-info">
+                    Будет дописано в правило <code>{appendTarget.ruleKey}</code>
+                    <button
+                      type="button"
+                      className="btn btn-mini"
+                      onClick={() => {
+                        setAppendTarget(null);
+                        setPending(null);
+                      }}
+                    >
+                      Отмена (вернуться к «создать новое»)
+                    </button>
+                  </div>
+                )}
+
+                {/* Панель похожих from — только когда не в append-режиме. */}
+                {!appendTarget && (
+                  <SimilarFromPanel
+                    scope="edit"
+                    rows={visibleSimilarRows}
+                    onAppend={(row) => {
+                      const firstInput = form.from
+                        .split(",")
+                        .map((s) => s.trim())
+                        .find(Boolean);
+                      if (!firstInput) {
+                        setErr("Введите from для добавления в существующее правило");
+                        return;
+                      }
+                      setErr("");
+                      setAppendTarget({
+                        ruleKey: row.ruleKey,
+                        section: row.section,
+                        newFrom: firstInput,
+                      });
+                      setPending(null);
+                    }}
+                    onOpen={(row) => {
+                      const entry = entries.find((e) => e.kind === "replacements");
+                      if (!entry) return;
+                      const line = findRuleLine(entry.raw, row.ruleKey);
+                      setActive("replacements");
+                      if (line !== null) {
+                        setPendingScroll("replacements", row.ruleKey, line);
+                      }
+                    }}
+                    onDismiss={(ruleKey) => {
+                      const next = new Set(dismissed);
+                      next.add(ruleKey);
+                      setDismissed(next);
+                    }}
+                  />
+                )}
               </>
             )}
             {kind === "glossary" && (
@@ -272,12 +437,27 @@ export function EditPanel() {
         <div className="edit-list">
           <h4>Записи ({existingKeys.length})</h4>
           <ul>
-            {existingKeys.map((k) => (
-              <li key={k}>
-                <span>{k}</span>
-                <button onClick={() => handleDelete(k)} className="btn-mini">✕</button>
-              </li>
-            ))}
+            {existingKeys.map((it, idx) => {
+              // Для replacements/lemma_replacements — { key, to? }, иначе строка.
+              const key = typeof it === "string" ? it : it.key;
+              const to = typeof it === "string" ? undefined : it.to;
+              return (
+                <li key={`${key}:${idx}`}>
+                  <span>
+                    {key}
+                    {to ? (
+                      <>
+                        {" "}
+                        (<code>{to}</code>)
+                      </>
+                    ) : null}
+                  </span>
+                  <button onClick={() => handleDelete(key)} className="btn-mini">
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

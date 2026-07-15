@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranscript } from "../store/transcript";
@@ -7,7 +7,11 @@ import { useTheme } from "../store/theme";
 import { applyRules } from "../engine/rules";
 import { exportStatsMarkdown } from "../lib/stats-export";
 import { writeFile } from "../lib/fs";
-import { tokenize } from "../engine/tokenizer";
+import { addEntry } from "../lib/yaml-edit";
+import { tokenize, norm } from "../engine/tokenizer";
+import { buildOovRows, type OovStatsContext } from "../engine/oov-stats";
+import { collapseTimemarks } from "../engine/collapse";
+import { OovStatsGrid } from "./OovStatsGrid";
 import type { Settings, FillerFile, ReplacementsFile, WhitelistFile } from "../types/dictionaries";
 import type { Decoration, DecorationCategory } from "../engine/types";
 import {
@@ -128,12 +132,19 @@ export function TranscriptView() {
   const transcript = useTranscript((s) => s.transcript);
   const cleanResult = useTranscript((s) => s.cleanResult);
   const setCleanResult = useTranscript((s) => s.setCleanResult);
+  const collapseEnabled = useTranscript((s) => s.collapseEnabled);
+  const setCollapseEnabled = useTranscript((s) => s.setCollapseEnabled);
 
   // Данные словарей для applyRules (подписка на стабильные поля, без новых объектов).
   const settings = useDictionaries((s) => (s.entries.find((e) => e.kind === "settings")?.data as Settings | null) ?? null);
   const filler = useDictionaries((s) => (s.entries.find((e) => e.kind === "filler")?.data as FillerFile | null) ?? null);
   const replacements = useDictionaries((s) => (s.entries.find((e) => e.kind === "replacements")?.data as ReplacementsFile | null) ?? null);
   const whitelist = useDictionaries((s) => (s.entries.find((e) => e.kind === "whitelist")?.data as WhitelistFile | null) ?? null);
+
+  // Для батч-добавления в whitelist нужны raw и applyEdit. Подписываемся через
+  // селекторы (см. LESSONS_LEARNED.md §3 — нельзя getState в замыкании колбэка).
+  const whitelistRaw = useDictionaries((s) => s.entries.find((e) => e.kind === "whitelist")?.raw ?? null);
+  const applyEdit = useDictionaries((s) => s.applyEdit);
 
   // Тема обоих Monaco-редакторов (vs-dark / light).
   const themeMode = useTheme((s) => s.mode);
@@ -150,6 +161,114 @@ export function TranscriptView() {
   // Контекстное меню ПКМ → словарь (этап 3). Какое действие и выделение открыто.
   const [ctxAction, setCtxAction] = useState<ContextAction | null>(null);
   const [ctxSelection, setCtxSelection] = useState<Selection | null>(null);
+
+  // Вкладка левой панели: «Оригинал» (Monaco) или «Статистика» (грид OOV).
+  const [origTab, setOrigTab] = useState<"original" | "stats">("original");
+  // Статус последней операции из грида (для футера).
+  const [oovStatus, setOovStatus] = useState("");
+
+  // Контекст для OOV-фильтра: многословные фразы из filler / replacements.
+  // Считаем только фразы с ≥ 2 слов (нормализованная форма содержит пробел) —
+  // они единственные, для которых актуальна проблема «токен проскакивает мимо
+  // replaceIdx/fillerWords». Одиночные слова уже корректно отфильтрованы движком
+  // (см. rules.ts §4). Мемоизация: пересчёт только при изменении словарей.
+  const oovCtx = useMemo<OovStatsContext>(() => {
+    const phraseNorms: string[] = [];
+    for (const p of filler?.filler_phrases ?? []) {
+      const n = norm(p);
+      if (n.includes(" ")) phraseNorms.push(n);
+    }
+    for (const rule of Object.values(replacements?.replacements ?? {})) {
+      for (const from of rule.from ?? []) {
+        const n = norm(from);
+        if (n.includes(" ")) phraseNorms.push(n);
+      }
+    }
+    return { phraseNorms };
+  }, [filler, replacements]);
+
+  // Строки грида OOV — чистая функция от cleanResult + transcript + контекста
+  // фраз (мемоизируется). transcript нужен для второго прохода по позициям
+  // токенов и фраз в репликах.
+  const oovRows = useMemo(
+    () =>
+      cleanResult && transcript
+        ? buildOovRows(cleanResult, transcript.parsed, oovCtx)
+        : [],
+    [cleanResult, transcript, oovCtx],
+  );
+
+  // Отображаемый очищенный текст: свёрнутая проекция по кнопке «Свернуть реплики».
+  // collapseTimemarks — чистая функция, НЕ мутирует cleanResult.cleanedText.
+  const cleanedShown = useMemo(
+    () =>
+      collapseEnabled && cleanResult
+        ? collapseTimemarks(cleanResult.cleanedText)
+        : cleanResult?.cleanedText ?? "",
+    [cleanResult, collapseEnabled],
+  );
+
+  // Батч-добавление выделенных слов в detector_whitelist.yaml (common_words).
+  // Накатываем raw одного addEntry на вход следующего → один applyEdit = один undo.
+  // Дедупликация по нормализованной форме против уже существующих common_words.
+  const handleAddWhitelist = useCallback(
+    (words: string[]) => {
+      if (words.length === 0) return;
+      if (!whitelistRaw) {
+        setOovStatus("Словарь whitelist не открыт.");
+        return;
+      }
+      // Уже существующие слова (нормализованные) — чтобы не добавить дубль.
+      const existing = new Set(
+        (whitelist?.common_words ?? []).map(norm),
+      );
+      let raw = whitelistRaw;
+      let added = 0;
+      let skipped = 0;
+      let firstErr: string | null = null;
+      for (const w of words) {
+        if (existing.has(norm(w))) {
+          skipped += 1;
+          continue;
+        }
+        const res = addEntry(raw, { kind: "whitelist", value: w });
+        if (!res.ok) {
+          firstErr ??= res.error ?? "ошибка";
+          break;
+        }
+        raw = res.raw;
+        existing.add(norm(w));
+        added += 1;
+      }
+      if (firstErr) {
+        setOovStatus(`Ошибка: ${firstErr}`);
+        return;
+      }
+      if (added > 0) {
+        applyEdit("whitelist", raw);
+      }
+      const parts = [`Добавлено: ${added}`];
+      if (skipped > 0) parts.push(`уже было: ${skipped}`);
+      setOovStatus(parts.join(", "));
+    },
+    [whitelistRaw, whitelist, applyEdit],
+  );
+
+  // Добавление одного слова в replacement: открывает ContextActionDialog
+  // с action="replace" — тот же поток, что и ПКМ «Заменить на…».
+  const handleAddReplacement = useCallback((word: string) => {
+    setCtxSelection({ text: word, isPhrase: false });
+    setCtxAction("replace");
+  }, []);
+
+  // Monaco в скрытой вкладке не пересчитывает layout. При возврате на «Оригинал»
+  // вызываем layout(), чтобы редактор занял корректные размеры.
+  useEffect(() => {
+    if (origTab === "original" && origEditorRef.current) {
+      // requestAnimationFrame — чтобы отработал показ контейнера (display).
+      requestAnimationFrame(() => origEditorRef.current?.layout());
+    }
+  }, [origTab]);
 
   const onOrigMount: OnMount = useCallback((ed, monaco) => {
     origEditorRef.current = ed;
@@ -294,23 +413,57 @@ export function TranscriptView() {
     <div className="transcript-view">
       <div className="transcript-panes">
         <div className="transcript-pane">
-          <div className="pane-header">Оригинал <span className="legend"><i className="dot oov"/>OOV <i className="dot will-replace"/>замена <i className="dot filler"/>filler</span></div>
-          <Editor
-            height="100%"
-            language="plaintext"
-            theme={themeMode === "dark" ? "vs-dark" : "light"}
-            path={transcript.path + "#orig"}
-            value={transcript.raw}
-            onMount={onOrigMount}
-            options={{
-              readOnly: true,
-              minimap: { enabled: false },
-              fontSize: 12,
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              wordWrap: "on",
-            }}
-          />
+          <div className="pane-tabs">
+            <button
+              className={`pane-tab${origTab === "original" ? " active" : ""}`}
+              onClick={() => setOrigTab("original")}
+            >
+              Оригинал
+            </button>
+            <button
+              className={`pane-tab${origTab === "stats" ? " active" : ""}`}
+              onClick={() => setOrigTab("stats")}
+            >
+              Статистика{oovRows.length > 0 ? ` (${oovRows.length})` : ""}
+            </button>
+            {origTab === "original" && (
+              <span className="legend pane-tab-legend">
+                <i className="dot oov" />OOV <i className="dot will-replace" />замена <i className="dot filler" />filler
+              </span>
+            )}
+          </div>
+          {/* Monaco НЕ размонтируем при переключении вкладок — иначе слетят
+              decorations/курсор/скролл. Скрываем через CSS; layout() вызывается
+              эффектом при возврате на вкладку. */}
+          <div className={`pane-tab-body${origTab === "original" ? "" : " hidden"}`}>
+            <Editor
+              height="100%"
+              language="plaintext"
+              theme={themeMode === "dark" ? "vs-dark" : "light"}
+              path={transcript.path + "#orig"}
+              value={transcript.raw}
+              onMount={onOrigMount}
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                fontSize: 12,
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+                wordWrap: "on",
+              }}
+            />
+          </div>
+          {origTab === "stats" &&
+            (cleanResult ? (
+              <OovStatsGrid
+                rows={oovRows}
+                onAddWhitelist={handleAddWhitelist}
+                onAddReplacement={handleAddReplacement}
+                status={oovStatus}
+              />
+            ) : (
+              <div className="stats-empty">Нажмите «Очистить», чтобы увидеть статистику.</div>
+            ))}
         </div>
         <div className="transcript-pane">
           <div className="pane-header">
@@ -322,6 +475,14 @@ export function TranscriptView() {
               <button onClick={handleSync} className="btn-mini" disabled={!cleanResult} title="Подскроллить вторую панель к той же реплике по таймштампу">
                 ⇆ Синхронизировать
               </button>
+              <button
+                onClick={() => setCollapseEnabled(!collapseEnabled)}
+                className={`btn-mini${collapseEnabled ? " active" : ""}`}
+                disabled={!cleanResult}
+                title="Свернуть избыточные временные метки в блоках одного спикера"
+              >
+                ⤵ Свернуть реплики
+              </button>
             </span>
           </div>
           <Editor
@@ -329,7 +490,7 @@ export function TranscriptView() {
             language="plaintext"
             theme={themeMode === "dark" ? "vs-dark" : "light"}
             path={transcript.path + "#clean"}
-            value={cleanResult?.cleanedText ?? ""}
+            value={cleanedShown}
             onMount={onCleanMount}
             options={{
               readOnly: true,

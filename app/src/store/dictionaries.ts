@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { parse } from "yaml";
-import type { DictEntry, DictKind } from "../types/dictionaries";
+import type { DictEntry, DictKind, Settings } from "../types/dictionaries";
 
 // Undo-стек хранит историю raw по kind. Каждое AST-правка (applyEdit) кладёт
 // предыдущее состояние; markSaved очищает стек (точка сохранения = корень).
@@ -14,12 +14,28 @@ interface UndoState {
   savedSnapshots: Record<string, string | undefined>;
 }
 
+/**
+ * Запрос на прокрутку Monaco к правилу. Кладётся в store из
+ * ContextActionDialog/EditPanel (кнопка «Открыть» в панели похожих `from`);
+ * считывается в `YamlEditor`, который делает `revealLineInCenter` и очищает.
+ *
+ * `ts` — момент постановки; если raw поменялся между постановкой и
+ * прокруткой, эффект в YamlEditor может игнорировать/перевычислить.
+ */
+export interface PendingScroll {
+  kind: DictKind;
+  ruleKey: string;
+  line: number;
+  ts: number;
+}
+
 interface DictionariesState {
   dir: string | null; // открытая директория словарей
   entries: DictEntry[]; // распознанные файлы по контракту имён
   unknownPaths: string[]; // .yaml/.yml файлы с нераспознанной схемой
   activeKind: DictKind | null; // активная вкладка
   undoState: UndoState;
+  pendingScroll: PendingScroll | null;
 
   openDir: (dir: string, entries: DictEntry[], unknownPaths: string[]) => void;
   closeDir: () => void;
@@ -34,6 +50,10 @@ interface DictionariesState {
   undo: (kind: DictKind) => boolean;
   // Можно ли отменить правку для kind.
   canUndo: (kind: DictKind) => boolean;
+  /** Поставить в очередь прокрутку Monaco к правилу. */
+  setPendingScroll: (kind: DictKind, ruleKey: string, line: number) => void;
+  /** Сбросить запрос после выполнения (или если он больше не актуален). */
+  clearPendingScroll: () => void;
 }
 
 export const useDictionaries = create<DictionariesState>((set, get) => ({
@@ -42,6 +62,7 @@ export const useDictionaries = create<DictionariesState>((set, get) => ({
   unknownPaths: [],
   activeKind: null,
   undoState: { stacks: {}, savedSnapshots: {} },
+  pendingScroll: null,
 
   openDir: (dir, entries, unknownPaths) => {
     // Снимок сохранённого состояния каждого файла — корень undo.
@@ -63,6 +84,7 @@ export const useDictionaries = create<DictionariesState>((set, get) => ({
       unknownPaths: [],
       activeKind: null,
       undoState: { stacks: {}, savedSnapshots: {} },
+      pendingScroll: null,
     }),
 
   setActive: (kind) => set({ activeKind: kind }),
@@ -140,11 +162,54 @@ export const useDictionaries = create<DictionariesState>((set, get) => ({
   },
 
   canUndo: (kind) => (get().undoState.stacks[kind] ?? []).length > 0,
+
+  setPendingScroll: (kind, ruleKey, line) =>
+    set({ pendingScroll: { kind, ruleKey, line, ts: Date.now() } }),
+
+  clearPendingScroll: () => set({ pendingScroll: null }),
 }));
 
 // Существует ли хотя бы один unsaved-файл (для подтверждения перед закрытием).
 export function selectHasUnsaved(state: DictionariesState): boolean {
   return state.entries.some((e) => e.dirty);
+}
+
+/**
+ * Дефолтные пороги похожести для панели «Похожие from» (см. similarity.ts).
+ * Для одиночных слов — 0.78 (покрывает «кодекс»↔«кодексе», 0.83);
+ * для фраз (≥ 1 пробела) — 0.85 (консервативнее — иначе ложные срабатывания
+ * на длинных фразах с общим началом). Эти константы используются, если в
+ * `settings.yaml` поля `similarity_threshold` нет или оно вне [0,1].
+ *
+ * Полевой `similarity_threshold` в Settings (типы) — исторически «висящий»
+ * (объявлен, но не читался). Теперь он задействуется: см. `getSimilarityThresholds`.
+ */
+export const DEFAULT_SIMILARITY_THRESHOLD = {
+  word: 0.78,
+  phrase: 0.85,
+};
+
+/**
+ * Прочитать пороги похожести из settings.yaml с дефолтами. Вызывать в
+ * `useMemo` от `entries` (см. паттерн A из LESSONS_LEARNED §3) — функция
+ * возвращает новый объект, в селектор подписывать нельзя.
+ */
+export function getSimilarityThresholds(entries: DictEntry[]): {
+  word: number;
+  phrase: number;
+} {
+  const settings = entries.find((e) => e.kind === "settings");
+  if (!settings || !settings.data || typeof settings.data !== "object") {
+    return DEFAULT_SIMILARITY_THRESHOLD;
+  }
+  const settingsObj = (settings.data as { settings?: Settings }).settings;
+  const threshold = settingsObj?.similarity_threshold;
+  if (typeof threshold === "number" && threshold >= 0 && threshold <= 1) {
+    // Один глобальный порог применяется и к словам, и к фразам.
+    // Если хочется раздельно — расширим SettingsFile двумя полями.
+    return { word: threshold, phrase: threshold };
+  }
+  return DEFAULT_SIMILARITY_THRESHOLD;
 }
 
 // Множество id категорий из glossary.yaml. Это НЕ селектор zustand (возвращает

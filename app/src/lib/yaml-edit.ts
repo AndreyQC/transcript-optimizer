@@ -1,5 +1,6 @@
 import { parseDocument, type Document } from "yaml";
 import type { DictKind, LlmYamlSettings } from "../types/dictionaries";
+import { norm as tokenNorm } from "../engine/tokenizer";
 
 // Опции сериализации, при которых пакет `yaml` сохраняет стиль исходника:
 // indentSeq:false — тире блочного списка на уровне родителя (как в образцах),
@@ -33,10 +34,13 @@ export interface AddEntryInput {
 }
 
 // Результат операции: новый сырой текст (для предпросмотра или записи).
+// `noop` — операция не внесла изменений (используется для дедупликации
+// и append при совпадении значения).
 export interface EditResult {
   raw: string;
   ok: boolean;
   error?: string;
+  noop?: boolean;
 }
 
 // Применить правку и вернуть новый текст. Не мутирует исходный raw.
@@ -363,4 +367,137 @@ export function findRuleLine(raw: string, ruleKey: string): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Дедуплицировать секцию `replacements` по нормализованному `to`
+ * (lowercase + trim пробелов; см. решение 2026-07-15: «сравнивай канонические
+ * формы в нижнем регистре»).
+ *
+ * Алгоритм:
+ *   1. parseDocument → проверка parse-errors.
+ *   2. Обойти пары секции `replacements` в исходном порядке.
+ *   3. Для каждого правила: взять `to`, нормализовать (`norm(to).trim()`).
+ *      Пустой `to` (битое правило) — пропускаем, оно не группа.
+ *   4. Сгруппировать правила по нормализованному `to`.
+ *   5. Для каждой группы с размером > 1:
+ *        - берём первое правило (по порядку ключей в YAML-файле);
+ *        - собираем уникальные `from` из всех правил группы (Set по
+ *          нормализованному значению; первое встреченное написание сохраняем);
+ *        - заменяем `first.from` на этот список;
+ *        - удаляем остальные правила группы из CST.
+ *   6. Вернуть новый raw. Если ни одна группа не имела дублей — `noop: true`,
+ *      raw совпадает с исходным (мы НЕ делаем никаких CST-операций в этом случае).
+ *
+ * `label` берётся от первого правила (старейшего по ключу); `description`
+ * других правил группы тихо отбрасывается (видны в diff как `- строки`).
+ * `label` не «мерджится» — это минимально инвазивно и обратимо через undo.
+ */
+export function dedupByTo(raw: string): EditResult {
+  let changed = false;
+  const res = applyEdit(raw, (doc) => {
+    const block = doc.get("replacements", true) as
+      | {
+          items: Array<{
+            key: { value: string };
+            value: { get: (k: string, keepScalar?: boolean) => unknown } | unknown;
+          }>;
+        }
+      | undefined;
+    if (!block || !("items" in block) || !Array.isArray(block.items)) {
+      // секции нет или она не map — нечего дедуплицировать.
+      return;
+    }
+
+    // Группировка пар по нормализованному `to`. `pairs: [перваяPair, ...остальные]`
+    // (первая в YAML — старейшая).
+    interface Group {
+      firstKey: string;
+      firstNode: { get: (k: string, keepScalar?: boolean) => unknown; set?: (k: string, v: unknown) => void };
+      pairs: Array<{ key: { value: string }; value: unknown }>;
+    }
+    const groups = new Map<string, Group>();
+    for (const pair of block.items) {
+      const key = String(pair.key?.value ?? "");
+      if (!key) continue;
+      const ruleNode = pair.value as { get?: (k: string, keepScalar?: boolean) => unknown } | undefined;
+      if (!ruleNode || typeof ruleNode.get !== "function") continue;
+      const toScalar = ruleNode.get("to", true) as { value?: unknown } | undefined;
+      const toRaw =
+        toScalar && typeof toScalar === "object" && "value" in toScalar
+          ? String((toScalar as { value?: unknown }).value ?? "")
+          : "";
+      const normTo = tokenNorm(toRaw).trim();
+      if (!normTo) {
+        // Пустой `to` — битое правило, не участвует в группах.
+        continue;
+      }
+      const existing = groups.get(normTo);
+      if (!existing) {
+        groups.set(normTo, {
+          firstKey: key,
+          firstNode: ruleNode as Group["firstNode"],
+          pairs: [pair],
+        });
+      } else {
+        existing.pairs.push(pair);
+      }
+    }
+
+    // Нормализация для сравнения `from`: lowercase + схлопнуть пробелы.
+    const normFrom = (s: string) => tokenNorm(s).replace(/\s+/g, " ").trim();
+
+    // Группы, где помимо первого правила есть хотя бы одна дубль-пара.
+    const dupGroups = Array.from(groups.values()).filter((g) => g.pairs.length >= 2);
+    if (dupGroups.length === 0) return; // без изменений — changed не поднимается.
+
+    for (const g of dupGroups) {
+      // Собираем уникальные `from` из всех пар группы (включая первую).
+      const seen = new Set<string>();
+      const mergedFrom: string[] = [];
+      for (const pair of g.pairs) {
+        const node = pair.value as { get?: (k: string, keepScalar?: boolean) => unknown } | undefined;
+        if (!node || typeof node.get !== "function") continue;
+        const fromList = node.get("from", true) as
+          | { items?: Array<{ value?: unknown }> }
+          | { value?: unknown }
+          | undefined;
+        const values: unknown[] = [];
+        if (fromList && typeof fromList === "object") {
+          if ("items" in fromList && Array.isArray((fromList as { items?: unknown[] }).items)) {
+            for (const it of (fromList as { items: Array<{ value?: unknown }> }).items) {
+              values.push(it.value);
+            }
+          } else if ("value" in fromList) {
+            values.push((fromList as { value?: unknown }).value);
+          }
+        }
+        for (const v of values) {
+          if (typeof v !== "string") continue;
+          const k = normFrom(v);
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
+          // Сохраняем написание первого встреченного — стабильно для diff.
+          mergedFrom.push(v);
+        }
+      }
+      // Перезаписываем `from` первого правила объединённым списком.
+      // `set` на ноде правила сохраняет ключ и стиль блока, но список
+      // `from` будет пересоздан — комментарии внутри списка теряются.
+      // Это приемлемо: дедуп — крупная операция, diff покажет изменения.
+      if (typeof g.firstNode.set === "function") {
+        g.firstNode.set("from", mergedFrom);
+      }
+      // Удаляем остальные пары группы из CST.
+      // `firstPair` — pairs[0], остальные — pairs[1..], они нам не нужны.
+      const otherPairs = g.pairs.slice(1);
+      for (const pair of otherPairs) {
+        const k = String(pair.key?.value ?? "");
+        if (k) doc.deleteIn(["replacements", k]);
+      }
+    }
+    changed = true;
+  });
+  if (!res.ok) return res;
+  return { ...res, noop: !changed };
 }

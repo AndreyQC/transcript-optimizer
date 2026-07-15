@@ -7,6 +7,7 @@ import {
 import {
   addEntry,
   deleteEntry,
+  dedupByTo,
   findRuleLine,
   type AddEntryInput,
 } from "../lib/yaml-edit";
@@ -99,16 +100,46 @@ export function EditPanel() {
     if (!ok) setErr("Нечего отменять");
   }
 
-  // Список существующих записей для удаления (упрощённо: только replacements/glossary).
-  const existingKeys = useMemo<string[]>(() => {
+  // Дедупликация по `to` (см. 20260715_003_dedup_by_to.md).
+  // Сравнение идёт по lowercase+trim; первое правило по ключу побеждает,
+  // остальные удаляются. Через существующий pending/Превью/Применить —
+  // никаких новых кнопок в форме.
+  function handleDedup() {
+    setErr("");
+    if (!activeEntry) return;
+    const res = dedupByTo(activeEntry.raw);
+    if (!res.ok) {
+      setErr(res.error ?? "ошибка дедупликации");
+      setPending(null);
+      return;
+    }
+    if (res.noop) {
+      setErr("Дублей по to нет — словарь чист");
+      setPending(null);
+      return;
+    }
+    setPendingBefore(activeEntry.raw);
+    setPending(res.raw);
+  }
+
+  // Список существующих записей для удаления (только replacements/glossary).
+  // Для replacements и lemma_replacements элемент — { key, to? }, чтобы в UI
+  // вывести «rule_key (to)» (фича 2026-07-15: показ канонической формы рядом).
+  // Для glossary и lemma_irregular — строки (там `to` нет).
+  type ListItem = string | { key: string; to?: string };
+  const existingKeys = useMemo<ListItem[]>(() => {
     if (!activeEntry?.data) return [];
     const d = activeEntry.data as Record<string, unknown>;
     if (activeKind === "replacements") {
-      const out: string[] = [];
-      const r = (d.replacements as Record<string, unknown>) ?? {};
-      const l = (d.lemma_replacements as Record<string, unknown>) ?? {};
-      out.push(...Object.keys(r).map((k) => k));
-      out.push(...Object.keys(l).map((k) => `${k} (lemma)`));
+      const out: ListItem[] = [];
+      const r = (d.replacements as Record<string, { to?: string }>) ?? {};
+      for (const [k, rule] of Object.entries(r)) {
+        out.push({ key: k, to: rule.to });
+      }
+      const l = (d.lemma_replacements as Record<string, { to?: string }>) ?? {};
+      for (const [k, rule] of Object.entries(l)) {
+        out.push({ key: `${k} (lemma)`, to: rule.to });
+      }
       return out;
     }
     if (activeKind === "glossary") {
@@ -239,6 +270,16 @@ export function EditPanel() {
     <aside className="edit-panel">
       <div className="edit-panel-header">
         <h3>Правка словаря</h3>
+        {activeKind === "replacements" && (
+          <button
+            onClick={handleDedup}
+            className="btn-mini"
+            disabled={!!pending || !activeEntry}
+            title="Слить правила с одинаковым `to` (lowercase+trim; первое по ключу побеждает)"
+          >
+            ⚙ Дедуплицировать
+          </button>
+        )}
         <button
           onClick={handleUndo}
           className="btn-mini btn-undo"
@@ -396,12 +437,27 @@ export function EditPanel() {
         <div className="edit-list">
           <h4>Записи ({existingKeys.length})</h4>
           <ul>
-            {existingKeys.map((k) => (
-              <li key={k}>
-                <span>{k}</span>
-                <button onClick={() => handleDelete(k)} className="btn-mini">✕</button>
-              </li>
-            ))}
+            {existingKeys.map((it, idx) => {
+              // Для replacements/lemma_replacements — { key, to? }, иначе строка.
+              const key = typeof it === "string" ? it : it.key;
+              const to = typeof it === "string" ? undefined : it.to;
+              return (
+                <li key={`${key}:${idx}`}>
+                  <span>
+                    {key}
+                    {to ? (
+                      <>
+                        {" "}
+                        (<code>{to}</code>)
+                      </>
+                    ) : null}
+                  </span>
+                  <button onClick={() => handleDelete(key)} className="btn-mini">
+                    ✕
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

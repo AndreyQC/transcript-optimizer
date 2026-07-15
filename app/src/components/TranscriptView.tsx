@@ -9,7 +9,7 @@ import { exportStatsMarkdown } from "../lib/stats-export";
 import { writeFile } from "../lib/fs";
 import { addEntry } from "../lib/yaml-edit";
 import { tokenize, norm } from "../engine/tokenizer";
-import { buildOovRows } from "../engine/oov-stats";
+import { buildOovRows, type OovStatsContext } from "../engine/oov-stats";
 import { collapseTimemarks } from "../engine/collapse";
 import { OovStatsGrid } from "./OovStatsGrid";
 import type { Settings, FillerFile, ReplacementsFile, WhitelistFile } from "../types/dictionaries";
@@ -167,10 +167,35 @@ export function TranscriptView() {
   // Статус последней операции из грида (для футера).
   const [oovStatus, setOovStatus] = useState("");
 
-  // Строки грида OOV — чистая функция от cleanResult, мемоизируется.
+  // Контекст для OOV-фильтра: многословные фразы из filler / replacements.
+  // Считаем только фразы с ≥ 2 слов (нормализованная форма содержит пробел) —
+  // они единственные, для которых актуальна проблема «токен проскакивает мимо
+  // replaceIdx/fillerWords». Одиночные слова уже корректно отфильтрованы движком
+  // (см. rules.ts §4). Мемоизация: пересчёт только при изменении словарей.
+  const oovCtx = useMemo<OovStatsContext>(() => {
+    const phraseNorms: string[] = [];
+    for (const p of filler?.filler_phrases ?? []) {
+      const n = norm(p);
+      if (n.includes(" ")) phraseNorms.push(n);
+    }
+    for (const rule of Object.values(replacements?.replacements ?? {})) {
+      for (const from of rule.from ?? []) {
+        const n = norm(from);
+        if (n.includes(" ")) phraseNorms.push(n);
+      }
+    }
+    return { phraseNorms };
+  }, [filler, replacements]);
+
+  // Строки грида OOV — чистая функция от cleanResult + transcript + контекста
+  // фраз (мемоизируется). transcript нужен для второго прохода по позициям
+  // токенов и фраз в репликах.
   const oovRows = useMemo(
-    () => (cleanResult ? buildOovRows(cleanResult) : []),
-    [cleanResult],
+    () =>
+      cleanResult && transcript
+        ? buildOovRows(cleanResult, transcript.parsed, oovCtx)
+        : [],
+    [cleanResult, transcript, oovCtx],
   );
 
   // Отображаемый очищенный текст: свёрнутая проекция по кнопке «Свернуть реплики».

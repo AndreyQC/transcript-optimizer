@@ -192,6 +192,21 @@ replacements:
     - ранбук
     - ранбуки
     - runbook
+  replacement_rule_030:
+    to: Excel
+    label: tech_term
+    from:
+    - Иксель
+  replacement_rule_031:
+    to: немного
+    label: linguistic
+    from:
+    - немножечко
+  replacement_rule_032:
+    to: codex
+    label: tech_term
+    from:
+    - кодексе
 lemma_replacements:
   lemma_rule_001:
     to: Slack

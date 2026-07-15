@@ -152,6 +152,8 @@ replacements:
     - тундра
     - cursor
     - курсоров
+    - курсора
+    - курсором
   replacement_rule_025:
     to: Codex
     label: tech_term
@@ -160,6 +162,8 @@ replacements:
     - кодекс
     - кодекс ЧПТ
     - codex
+    - кодексе
+    - Кодексов
   replacement_rule_026:
     to: Markdown
     label: tech_term
@@ -168,6 +172,7 @@ replacements:
     - маркдаун
     - марк даун
     - markdown
+    - маркдауна
   replacement_rule_027:
     to: Composer
     label: tech_term
@@ -197,16 +202,94 @@ replacements:
     label: tech_term
     from:
     - Иксель
+    - Excelских
   replacement_rule_031:
     to: немного
     label: linguistic
     from:
     - немножечко
-  replacement_rule_032:
-    to: codex
+  replacement_rule_033:
+    to: файл
+    label: linguistic
+    from:
+    - файлики
+    - файликов
+  replacement_rule_034:
+    to: front-end
     label: tech_term
     from:
-    - кодексе
+    - фронт-энд
+    - фронт-эндом
+    - фронтендовскую
+  replacement_rule_035:
+    to: back-end
+    label: tech_term
+    from:
+    - бэк-энд
+  replacement_rule_036:
+    to: модель
+    label: tech_term
+    from:
+    - модельки
+    - моделька
+  replacement_rule_037:
+    to: Python
+    label: tech_term
+    from:
+    - питанящих
+    - питоновском
+  replacement_rule_038:
+    to: SOTA-модель
+    label: tech_term
+    from:
+    - сото-модели
+  replacement_rule_039:
+    to: tools
+    label: tech_term
+    from:
+    - Тулы
+    - Тул
+  replacement_rule_040:
+    to: поделиться
+    label: tech_term
+    from:
+    - шарить
+  replacement_rule_041:
+    to: вопрос
+    label: linguistic
+    from:
+    - вопросик
+  replacement_rule_042:
+    to: Low Code
+    label: tech_term
+    from:
+    - Лоу Кода
+  replacement_rule_045:
+    to: Data Sculptor
+    label: tech_term
+    from:
+    - Дата-скульптор
+  replacement_rule_047:
+    to: setup
+    label: tech_term
+    from:
+    - сетап
+  replacement_rule_048:
+    to: не хорошо
+    label: linguistic
+    from:
+    - Ай-яй-яй
+  replacement_rule_049:
+    to: плохо
+    label: linguistic
+    from:
+    - Атата
+    - пипец-пипец
+  replacement_rule_051:
+    to: ETL инструмент
+    label: tech_term
+    from:
+    - тель-инструмент
 lemma_replacements:
   lemma_rule_001:
     to: Slack

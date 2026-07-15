@@ -131,6 +131,67 @@ cargo check --manifest-path app/src-tauri/Cargo.toml  # бэкенд
 
 ---
 
+## Сборка релизного `.exe`
+
+Tauri 2 даёт нативный бинарь на Windows (без встроенного Chromium — используется системный WebView2). Размер — 5-15 МБ.
+
+### Команды
+
+Из корня репозитория:
+
+```bash
+cd app
+pnpm exec tsc --noEmit                              # проверка типов (обязательно до сборки)
+pnpm exec vite build                                # сборка фронтенд-бандла
+pnpm tauri build                                    # полная сборка .exe + installer'ов
+# опции:
+pnpm tauri build --debug                            # быстрая отладочная сборка
+pnpm tauri build --no-bundle                        # только .exe, без installer'ов
+pnpm tauri build --bundles nsis                     # только NSIS-installer (без MSI)
+```
+
+### Где лежат артефакты (пути от корня репозитория)
+
+| Артефакт | Путь |
+|---|---|
+| Исполняемый файл | `app/src-tauri/target/release/transcript-optimizer.exe` |
+| MSI-инсталлятор | `app/src-tauri/target/release/bundle/msi/TranscriptOptimizer_*.msi` |
+| NSIS-инсталлятор | `app/src-tauri/target/release/bundle/nsis/TranscriptOptimizer_*.exe` |
+| Промежуточные Rust-объекты | `app/src-tauri/target/` |
+| Скомпилированный фронт-бандл (внутри `.exe`) | `app/dist/` (промежуточный) |
+
+> Имя файла `TranscriptOptimizer_*.msi` подставляется из `productName` в `app/src-tauri/tauri.conf.json`. Если переименуете — поменяйте здесь.
+
+### Что потребуется на машине разработчика
+
+- **Node.js ≥ 20**, **pnpm**, **Rust** (stable) — по [«Запуск (разработка)»](#запуск-разработка).
+- **MSVC Build Tools** — `Desktop development with C++` через Visual Studio Installer (для компоновки Rust → `.exe`).
+- **WebView2** — на Windows 10/11 предустановлен; на старых системах Tauri попросит доустановить.
+
+### Перед распространением
+
+В `app/src-tauri/tauri.conf.json` обязательно измените:
+
+```json
+{
+  "productName": "Transcript Optimizer",
+  "version": "0.1.0",                       // бампить при релизе
+  "identifier": "com.yourcompany.transcript-optimizer"  // уникальный реверс-DNS для подписи/установки
+}
+```
+
+Сейчас там шаблон Tauri; без своего `identifier` Windows не привяжет ни ярлыки, ни сертификат подписи.
+
+### Подпись (опционально, для распространения)
+
+Без подписи SmartScreen покажет «Unknown publisher»:
+- Купить EV-сертификат (Comodo / DigiCert).
+- Использовать [tauri-action](https://github.com/tauri-apps/tauri-action) — GitHub Action, который подписывает и публикует релиз автоматически.
+
+Для локального тестирования подпись не нужна: пользователь увидит предупреждение и нажмёт «Run anyway» («Подробнее → Выполнить в любом случае»).
+
+---
+
 ## Документация
 
 - [Концепция и анализ](./-=tasks=-/2026-07-09/20260709_001_idea.md) — постановка задачи, разбор словарей, выбор стека, форматы YAML.

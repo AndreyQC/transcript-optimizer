@@ -25,6 +25,11 @@ export interface AddEntryInput {
   value?: string; // filler/whitelist/settings
   key?: string; // lemma_irregular/settings
   isLemma?: boolean; // replacements.yaml: добавить в lemma_replacements (from_lemmas)
+  // replacements.yaml: вместо создания нового правила — дописать `from` (или
+  // `from_lemmas`) в существующее правило `appendFromToRule`. Используется
+  // кнопкой «Добавить в это правило» в панели «Похожие from» (см. similarity.ts).
+  appendFromToRule?: string;
+  appendFromSection?: "from" | "from_lemmas";
 }
 
 // Результат операции: новый сырой текст (для предпросмотра или записи).
@@ -77,6 +82,21 @@ export function addEntry(raw: string, input: AddEntryInput): EditResult {
         const section = isLemma ? "lemma_replacements" : "replacements";
         const fromField = isLemma ? "from_lemmas" : "from";
         const prefix = isLemma ? "lemma_rule" : "replacement_rule";
+        // Если передали appendFromToRule — дописываем в существующее правило
+        // (кнопка «Добавить в это правило» из панели похожих from). Префикс секции
+        // и fromField берём из этого аргумента, чтобы не зависеть от isLemma.
+        if (input.appendFromToRule && input.appendFromSection) {
+          const appended = appendFromToRuleInDoc(
+            doc,
+            input.appendFromToRule,
+            (input.from ?? [])[0] ?? "",
+            input.appendFromSection,
+          );
+          if (!appended.ok) {
+            throw new Error(appended.error);
+          }
+          break;
+        }
         const key = nextRuleKey(doc, section, prefix);
         const node = doc.createNode({
           to: input.to ?? "",
@@ -209,10 +229,138 @@ export function setLlmSettings(raw: string, llm: LlmYamlSettings): EditResult {
       temperature: llm.temperature,
       max_tokens: llm.max_tokens,
       // system_prompt_path — путь к .md-файлу промпта (опциональный; пустая
-      // строка = файл не выбран). Тело промпта в YAML не хранится.
+      // строка = файл не выбран). Тело промпта в YAML не дублируется.
       system_prompt_path: llm.system_prompt_path ?? "",
       user_prompt_template: llm.user_prompt_template,
     });
     settingsMap.set("llm", node);
   });
+}
+
+// === «Похожие from» (similarity.ts) =========================================
+// Используется кнопкой «Добавить в это правило» в панели похожих from.
+
+/** Результат `appendFromToRule`. `noop` означает «уже есть — не меняли». */
+export interface AppendFromResult extends EditResult {
+  noop?: boolean;
+}
+
+/**
+ * Дописать `value` в список `from` (или `from_lemmas`) существующего правила
+ * `ruleKey` в секции `replacements` / `lemma_replacements`. Через CST —
+ * сохраняет комментарии и стиль.
+ *
+ * - Если `value` уже в списке — `noop: true`, raw не меняется.
+ * - Если правило не найдено — возвращает `ok: false` с ошибкой.
+ * - Если поля `from`/`from_lemmas` нет или оно не список — инициализирует списком.
+ */
+export function appendFromToRule(
+  raw: string,
+  ruleKey: string,
+  value: string,
+  section: "from" | "from_lemmas",
+): AppendFromResult {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { raw, ok: false, error: "Пустое значение from" };
+  }
+  let noop = false;
+  const result = applyEdit(raw, (doc) => {
+    const res = appendFromToRuleInDoc(doc, ruleKey, trimmed, section);
+    if (!res.ok) {
+      throw new Error(res.error);
+    }
+    noop = !!res.noop;
+  });
+  if (!result.ok) {
+    return { ...result, noop };
+  }
+  return { raw: result.raw, ok: true, noop };
+}
+
+/**
+ * Хелпер для `appendFromToRule` и для `addEntry` (ветка `append`). Не делает
+ * parse/raw — работает с уже распарсенным `doc`. Сообщает об ошибке через
+ * возврат `{ ok: false, error }` (НЕ throw), чтобы вызывающий код мог решить,
+ * как обработать.
+ */
+function appendFromToRuleInDoc(
+  doc: Document.Parsed,
+  ruleKey: string,
+  value: string,
+  section: "from" | "from_lemmas",
+): { ok: boolean; noop?: boolean; error?: string } {
+  // Корень содержит обе секции как map'ы. Ищем ключ в обеих — если есть только
+  // в одной, это всё равно однозначно (rule_key уникален между секциями).
+  let block:
+    | { items: Array<{ key: { value: string }; value: unknown }> }
+    | undefined;
+  let blockPath: "replacements" | "lemma_replacements" | undefined;
+  for (const p of ["replacements", "lemma_replacements"] as const) {
+    const b = doc.get(p, true) as
+      | { items: Array<{ key: { value: string }; value: unknown }> }
+      | undefined;
+    if (b && "items" in b && b.items.some((it) => it.key?.value === ruleKey)) {
+      block = b;
+      blockPath = p;
+      break;
+    }
+  }
+  if (!block || !blockPath) {
+    return { ok: false, error: `Правило ${ruleKey} не найдено` };
+  }
+  const pair = block.items.find((it) => it.key?.value === ruleKey);
+  if (!pair) return { ok: false, error: `Правило ${ruleKey} не найдено` };
+  // pair.value — Pair<ValueNode> (или Scalar в простых случаях).
+  const ruleNode = pair.value as
+    | { get: (k: string, keepScalar?: boolean) => unknown; set: (k: string, v: unknown) => void }
+    | undefined;
+  if (!ruleNode || typeof ruleNode.get !== "function") {
+    return { ok: false, error: `Неверный формат правила ${ruleKey}` };
+  }
+  const fromNode = ruleNode.get(section, true) as
+    | { items: Array<{ value: string }>; add: (v: unknown) => void }
+    | { value: string }
+    | undefined;
+  if (!fromNode) {
+    // Поле отсутствует — создаём список из одного элемента.
+    ruleNode.set(section, [value]);
+    return { ok: true };
+  }
+  // Поле уже есть — если это Scalar (одно значение), превращаем в список.
+  if ("value" in fromNode && typeof fromNode.value === "string") {
+    if (fromNode.value === value) return { ok: true, noop: true };
+    ruleNode.set(section, [fromNode.value, value]);
+    return { ok: true };
+  }
+  // Иначе — список.
+  const items = (fromNode as { items: Array<{ value: string }> }).items;
+  if (items.some((it) => it.value === value)) {
+    return { ok: true, noop: true };
+  }
+  (fromNode as { add: (v: unknown) => void }).add(value);
+  return { ok: true };
+}
+
+/**
+ * Найти 1-based номер строки ключа `ruleKey` в `raw` (для Monaco
+ * `revealLineInCenter`). Ищет в обеих секциях `replacements` и
+ * `lemma_replacements`. Возвращает null при ошибке парсинга или если ключ не
+ * найден (например, файл уже отредактирован после `findRuleLine`).
+ */
+export function findRuleLine(raw: string, ruleKey: string): number | null {
+  try {
+    const doc = parseDocument(raw);
+    if (doc.errors.length > 0) return null;
+    for (const section of ["replacements", "lemma_replacements"] as const) {
+      const pair = doc.getIn([section, ruleKey], true) as { line?: number } | undefined;
+      if (pair && typeof pair.line === "number") {
+        // eemeli/yaml: line — 0-based номер строки ключа map-пары.
+        return pair.line + 1;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

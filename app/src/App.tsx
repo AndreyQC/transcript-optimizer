@@ -7,11 +7,13 @@ import { YamlEditor } from "./components/YamlEditor";
 import { EditPanel } from "./components/EditPanel";
 import { TranscriptView } from "./components/TranscriptView";
 import { SummaryView } from "./components/SummaryView";
+import { MarkdownView } from "./components/MarkdownView";
 import { useDictionaries } from "./store/dictionaries";
 import { useTranscript } from "./store/transcript";
+import { useMarkdown } from "./store/markdown";
 import "./App.css";
 
-type Mode = "dictionaries" | "transcript" | "summary";
+type Mode = "dictionaries" | "transcript" | "summary" | "markdown";
 
 function App() {
   const [mode, setMode] = useState<Mode>("dictionaries");
@@ -35,8 +37,11 @@ function App() {
         const win = getCurrentWindow();
         unlisten = await win.onCloseRequested(async (event) => {
           try {
-            // Читаем актуальный флаг из store в момент закрытия (не из замыкания).
-            if (!useDictionaries.getState().entries.some((e) => e.dirty)) return;
+            // Читаем актуальные флаги из store в момент закрытия (не из замыкания).
+            // Несохранённое может быть в словарях ИЛИ в редакторе .md.
+            const dictDirty = useDictionaries.getState().entries.some((e) => e.dirty);
+            const mdDirty = !!useMarkdown.getState().doc?.dirty;
+            if (!dictDirty && !mdDirty) return;
             const confirmed = await ask(
               "Есть несохранённые изменения. Закрыть окно без сохранения?",
               { title: "Несохранённые изменения", kind: "warning" },
@@ -80,6 +85,12 @@ function App() {
         >
           Саммари
         </button>
+        <button
+          className={mode === "markdown" ? "mode-btn active" : "mode-btn"}
+          onClick={() => setMode("markdown")}
+        >
+          Markdown
+        </button>
       </nav>
       <Toolbar mode={mode} />
       {mode === "dictionaries" ? (
@@ -95,6 +106,10 @@ function App() {
       ) : mode === "transcript" ? (
         <div className="transcript-container">
           <TranscriptView />
+        </div>
+      ) : mode === "markdown" ? (
+        <div className="transcript-container">
+          <MarkdownView />
         </div>
       ) : (
         <SummaryView />

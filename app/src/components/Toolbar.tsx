@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { open as pickFile } from "@tauri-apps/plugin-dialog";
+import { open as pickFile, save } from "@tauri-apps/plugin-dialog";
 import { useDictionaries } from "../store/dictionaries";
 import { useTranscript } from "../store/transcript";
+import { useMarkdown } from "../store/markdown";
 import { useTheme } from "../store/theme";
 import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath, readFile as readFileFn } from "../lib/fs";
 import { exportGlossaryMarkdown } from "../lib/glossary-export";
 import { applyRules } from "../engine/rules";
 import type { ReplacementsFile, GlossaryFile, Settings, FillerFile, WhitelistFile } from "../types/dictionaries";
 
-type Mode = "dictionaries" | "transcript" | "summary";
+type Mode = "dictionaries" | "transcript" | "summary" | "markdown";
 
 // Тулбар. В режиме «Словари»: открыть папку/сохранить/экспорт глоссария.
 // В режиме «Транскрипт»: открыть транскрипт / применить правила (Очистить).
@@ -33,6 +34,13 @@ export function Toolbar({ mode }: { mode: Mode }) {
   const closeTranscript = useTranscript((s) => s.closeTranscript);
   const setCleanResult = useTranscript((s) => s.setCleanResult);
   const cleanDirty = useTranscript((s) => s.cleanDirty);
+
+  // markdown-store для режима markdown (открыть/сохранить .md).
+  const mdDoc = useMarkdown((s) => s.doc);
+  const openMarkdown = useMarkdown((s) => s.openMarkdown);
+  const markMdSaved = useMarkdown((s) => s.markSaved);
+  const setMdPath = useMarkdown((s) => s.setPath);
+  const closeMarkdown = useMarkdown((s) => s.closeMarkdown);
 
   // Словарные данные для applyRules.
   const settings = useDictionaries((s) => (s.entries.find((e) => e.kind === "settings")?.data as Settings | null) ?? null);
@@ -120,6 +128,58 @@ export function Toolbar({ mode }: { mode: Mode }) {
     }
   }
 
+  // — Режим Markdown: открыть / создать / сохранить / закрыть .md —
+
+  async function handleOpenMd() {
+    try {
+      const chosen = await pickFile({
+        multiple: false,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (typeof chosen !== "string") return;
+      const raw = await readFileFn(chosen);
+      openMarkdown(chosen, raw);
+      setStatus(`Открыт: ${chosen}`);
+    } catch (e) {
+      setStatus(`Ошибка открытия: ${String(e)}`);
+    }
+  }
+
+  function handleNewMd() {
+    openMarkdown("", "");
+    setStatus("Новый документ. Сохраните через «Сохранить как…»");
+  }
+
+  // Если у документа нет path (новый) — редирект на диалог «как…».
+  async function handleSaveMd() {
+    if (!mdDoc) return;
+    if (!mdDoc.path) return handleSaveAsMd();
+    try {
+      await writeFileFn(mdDoc.path, mdDoc.raw);
+      markMdSaved();
+      setStatus(`Сохранено: ${mdDoc.path}`);
+    } catch (e) {
+      setStatus(`Ошибка сохранения: ${String(e)}`);
+    }
+  }
+
+  async function handleSaveAsMd() {
+    if (!mdDoc) return;
+    try {
+      const path = await save({
+        defaultPath: mdDoc.path || "untitled.md",
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (!path) return; // отмена
+      await writeFileFn(path, mdDoc.raw);
+      setMdPath(path);
+      markMdSaved();
+      setStatus(`Сохранено: ${path}`);
+    } catch (e) {
+      setStatus(`Ошибка сохранения: ${String(e)}`);
+    }
+  }
+
   const canSave = !!activeEntry?.dirty;
   const canExport = !!dir && (!!replacements || !!glossary);
   const canClean = !!transcript;
@@ -138,6 +198,42 @@ export function Toolbar({ mode }: { mode: Mode }) {
         >
           {themeMode === "dark" ? "☼" : "☾"}
         </button>
+        <span className="status">{status}</span>
+      </header>
+    );
+  }
+
+  if (mode === "markdown") {
+    // Режим «Markdown»: открыть/новый/сохранить/сохранить как…/закрыть .md.
+    // Сами панели редактора живут в MarkdownView; тулбар — только файловые операции.
+    return (
+      <header className="toolbar">
+        <button
+          onClick={toggleTheme}
+          className="btn theme-toggle"
+          title={themeMode === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
+          aria-label="Переключить тему"
+        >
+          {themeMode === "dark" ? "☼" : "☾"}
+        </button>
+        <button onClick={handleOpenMd} className="btn">
+          Открыть .md
+        </button>
+        <button onClick={handleNewMd} className="btn">
+          Новый
+        </button>
+        <button onClick={handleSaveMd} className="btn" disabled={!mdDoc || !mdDoc.dirty}>
+          Сохранить{mdDoc && !mdDoc.path ? " как…" : ""}
+        </button>
+        <button onClick={handleSaveAsMd} className="btn" disabled={!mdDoc}>
+          Сохранить как…
+        </button>
+        {mdDoc && (
+          <button onClick={closeMarkdown} className="btn">
+            Закрыть
+          </button>
+        )}
+        {mdDoc?.dirty && <span className="badge-stale">● несохранённые изменения</span>}
         <span className="status">{status}</span>
       </header>
     );

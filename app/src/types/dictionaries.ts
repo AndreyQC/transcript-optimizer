@@ -19,13 +19,31 @@ export interface Settings {
 
 // Подраздел `llm` в settings.yaml. snake_case по конвенции YAML-файлов проекта.
 export interface LlmYamlSettings {
+  // Имя модели, выбранной по умолчанию. Если не задано — используется
+  // первая модель из `models`.
+  default_model?: string;
+  // Карта конфигураций моделей: ключ — имя модели (camelCase/snake_case по
+  // желанию пользователя), значение — настройки подключения.
+  models: Record<string, LlmModelConfig>;
+}
+
+// Конфигурация одной OpenAI-совместимой модели.
+export interface LlmModelConfig {
+  // Base URL API (с /v1). Может быть зашифрован: crypto__<ENV>__<ct>.
   base_url: string;
+  // Имя модели для chat/completions.
   model: string;
   temperature: number;
   max_tokens: number;
+  // API-ключ. Может быть зашифрован: crypto__<ENV>__<ct>.
+  // Если не задан — fallback на OPENAI_API_KEY из окружения.
+  api_key?: string;
+  // true: данные уходят на внешний сервер. Показываем предупреждение о
+  // необходимости проверить транскрипт на чувствительные данные.
+  // Если не задано — считаем true (безопасный дефолт).
+  external?: boolean;
   // Абсолютный (или относительный от папки словарей) путь к .md-файлу промпта.
   // Тело промпта живёт ТОЛЬКО в этом файле — в YAML оно не дублируется.
-  // Опционально: может отсутствовать в старых YAML (тогда UI покажет «не выбран»).
   system_prompt_path?: string;
   // Шаблон пользовательского сообщения с плейсхолдером {transcript}.
   user_prompt_template: string;

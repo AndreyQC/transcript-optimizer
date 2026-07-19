@@ -4,12 +4,48 @@ settings:
   min_word_len: 3
   suggestions_header: true
   llm:
-    base_url: https://api.minimax.io/v1
-    model: MiniMax-M3
-    temperature: 0.3
-    max_tokens: 4096
-    system_prompt_path: C:\repos\personal\-=Sourcecraft=-\transcript-optimizer\sample\transcript_optimizer\drill_ai_skill_summary.md
-    user_prompt_template: |-
-      Сделай саммари следующего транскрипта:
+    # Модель, выбранная по умолчанию при открытии режима «Саммари».
+    default_model: minimax
+    models:
+      minimax:
+        # Base URL API (с /v1). Может быть зашифрован через UI кнопкой 🔒:
+        # формат crypto__<ENV>__<ciphertext>, ключ Fernet — из env <ENV>.
+        base_url: https://api.minimax.io/v1
+        model: MiniMax-M3
+        temperature: 0.3
+        max_tokens: 4096
+        # API-ключ. Пустое значение → fallback на OPENAI_API_KEY env.
+        api_key: ""
+        # external: true — данные уходят за пределы локальной машины.
+        # В UI будет показано предупреждение о проверке транскрипта.
+        external: true
+        system_prompt_path: C:\repos\personal\-=Sourcecraft=-\transcript-optimizer\sample\transcript_optimizer\drill_ai_skill_summary.md
+        user_prompt_template: |-
+          Сделай саммари следующего транскрипта:
 
-      {transcript}
+          {transcript}
+      openai:
+        base_url: https://api.openai.com/v1
+        model: gpt-4o-mini
+        temperature: 0.3
+        max_tokens: 4096
+        api_key: ""
+        external: true
+        system_prompt_path: C:\repos\personal\-=Sourcecraft=-\transcript-optimizer\sample\transcript_optimizer\drill_ai_skill_summary.md
+        user_prompt_template: |-
+          Сделай саммари следующего транскрипта:
+
+          {transcript}
+      local_ollama:
+        # Пример локальной модели через Ollama (OpenAI-совместимый endpoint).
+        base_url: http://localhost:11434/v1
+        model: qwen2.5
+        temperature: 0.3
+        max_tokens: 4096
+        api_key: ignored
+        external: false
+        system_prompt_path: C:\repos\personal\-=Sourcecraft=-\transcript-optimizer\sample\transcript_optimizer\drill_ai_skill_summary.md
+        user_prompt_template: |-
+          Сделай саммари:
+
+          {transcript}

@@ -216,26 +216,39 @@ export function previewDelete(raw: string, input: DeleteEntryInput): EditResult 
 // Перезаписать подраздел `settings.llm` в settings.yaml новыми значениями.
 // Сохраняет все остальные поля settings.yaml. Создаёт подраздел, если его не было.
 // snake_case — по конвенции YAML-файлов проекта (не camelCase, как в lib/llm.ts).
+//
+// Новая схема: settings.llm.default_model + settings.llm.models.
 export function setLlmSettings(raw: string, llm: LlmYamlSettings): EditResult {
   return applyEdit(raw, (doc) => {
     const settingsMap = doc.get("settings", true) as
       | { set: (k: string, v: unknown) => void }
       | undefined;
     if (!settingsMap) {
-      // throw внутри applyEdit-колбэка ловится try/catch и возвращается как
-      // EditResult с ошибкой. (Прежний `return … as unknown as void` НЕ работал —
-      // колбэк типизирован как `void`, applyEdit игнорирует возвращаемое значение.)
       throw new Error("settings.yaml: нет корневого раздела `settings`");
     }
+
+    const models: Record<string, unknown> = {};
+    for (const [name, cfg] of Object.entries(llm.models)) {
+      models[name] = {
+        base_url: cfg.base_url,
+        model: cfg.model,
+        temperature: cfg.temperature,
+        max_tokens: cfg.max_tokens,
+        // api_key опционален: пустая строка означает fallback на OPENAI_API_KEY env.
+        api_key: cfg.api_key ?? "",
+        // external: true — данные уходят на внешний сервер; false — локальная/внутренняя.
+        // Явно пишем true, чтобы пользователь видел статус в YAML.
+        external: cfg.external ?? true,
+        // system_prompt_path — путь к .md-файлу промпта (опциональный; пустая
+        // строка = файл не выбран). Тело промпта в YAML не дублируется.
+        system_prompt_path: cfg.system_prompt_path ?? "",
+        user_prompt_template: cfg.user_prompt_template,
+      };
+    }
+
     const node = doc.createNode({
-      base_url: llm.base_url,
-      model: llm.model,
-      temperature: llm.temperature,
-      max_tokens: llm.max_tokens,
-      // system_prompt_path — путь к .md-файлу промпта (опциональный; пустая
-      // строка = файл не выбран). Тело промпта в YAML не дублируется.
-      system_prompt_path: llm.system_prompt_path ?? "",
-      user_prompt_template: llm.user_prompt_template,
+      default_model: llm.default_model,
+      models,
     });
     settingsMap.set("llm", node);
   });

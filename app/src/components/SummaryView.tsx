@@ -8,42 +8,47 @@ import { useLlm } from "../store/llm";
 import { useTranscript } from "../store/transcript";
 import { useTheme } from "../store/theme";
 import { useSummary, type Source } from "../store/summary";
-import { streamChatCompletion, type LlmSettings } from "../lib/llm";
+import {
+  streamChatCompletion,
+  getEffectiveApiKey,
+  isCryptoToken,
+  parseCryptoToken,
+  encryptText,
+} from "../lib/llm";
 import { stripReasoning } from "../lib/reasoning";
 import { writeFile } from "../lib/fs";
 import { collapseTimemarks } from "../engine/collapse";
 import { Mermaid } from "./Mermaid";
 
-// Режим «Саммари»: настройки LLM, статус ключа, две кнопки запуска (raw/cleaned),
-// live-рендер Markdown (GFM + Mermaid) и Monaco Diff при наличии обоих результатов.
+// Режим «Саммари»: выбор модели, настройки LLM, статус ключа, две кнопки запуска
+// (raw/cleaned/collapsed), live-рендер Markdown и Monaco Diff.
 //
 // Вкладки результата — двухуровневые:
 //   верхний уровень: Raw | Cleaned | Diff (что показываем)
 //   под-вкладки (только для Raw/Cleaned): Поток (сырой текст) | Результат (рендер)
-// Поток — моноширинный <pre>, видно как стрим заполняется. Результат — отрендеренный
-// Markdown + кнопка «Сохранить .md».
 //
-// ВАЖНО: результаты саммари (summaryRaw/Cleaned, streaming, вкладки) живут в
-// store/summary.ts, а не в локальном useState. Иначе уход в другой режим
-// (Словари/Транскрипт) размонтирует этот компонент и потеряет результаты —
-// это был баг №2.
+// ВАЖНО: результаты саммари живут в store/summary.ts, а не в локальном useState.
 
 export function SummaryView() {
-  // store-подписки: settings (плоский объект — безопасный селектор, см. §3 LL),
-  // apiKeyAvailable, refreshApiKey.
-  const settings = useLlm((s) => s.settings);
-  const setSettings = useLlm((s) => s.setSettings);
+  // store-подписки: выбираем только плоские поля (LESSONS_LEARNED.md §3).
+  const models = useLlm((s) => s.models);
+  const selectedModel = useLlm((s) => s.selectedModel);
+  const setSelectedModel = useLlm((s) => s.setSelectedModel);
+  const setModelSettings = useLlm((s) => s.setModelSettings);
+  const addModel = useLlm((s) => s.addModel);
+  const removeModel = useLlm((s) => s.removeModel);
+  const renameModel = useLlm((s) => s.renameModel);
+  const yamlAvailable = useLlm((s) => s.yamlAvailable);
   const apiKeyAvailable = useLlm((s) => s.apiKeyAvailable);
   const refreshApiKey = useLlm((s) => s.refreshApiKey);
-  const yamlAvailable = useLlm((s) => s.yamlAvailable);
+
+  const settings = models[selectedModel] ?? null;
 
   const transcript = useTranscript((s) => s.transcript);
   const cleanResult = useTranscript((s) => s.cleanResult);
 
   const themeMode = useTheme((s) => s.mode);
 
-  // Результаты саммари — из store, чтобы переживать размонтирование компонента
-  // при переключении режима (баг №2). Локально — только error/saveStatus (UI-only).
   const summaryRaw = useSummary((s) => s.summaryRaw);
   const summaryCleaned = useSummary((s) => s.summaryCleaned);
   const summaryCollapsed = useSummary((s) => s.summaryCollapsed);
@@ -59,25 +64,14 @@ export function SummaryView() {
 
   const [error, setError] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<string>("");
-  // Выбор пары для Diff — UI-выбор, переживает размонтирование не обязан.
-  // По умолчанию raw↔cleaned (как было до добавления collapsed).
   const [diffPair, setDiffPair] = useState<[Source, Source]>(["raw", "cleaned"]);
 
-  // Флаг «diff уже предложен». Автопереключение на diff срабатывает ОДИН раз —
-  // ровно когда оба результата впервые готовы и стрим остановлен. После этого
-  // пользователь может свободно переключаться на Raw/Cleaned (чтобы посмотреть
-  // результат и сохранить), и эффект не должен перетягивать его обратно на diff.
-  // Сбрасывается при старте нового стрима в runSummary.
   const diffOfferedRef = useRef(false);
 
-  // При монтировании — проверить наличие ключа (не делаем этого на импорте store,
-  // чтобы не падать вне Tauri). Зависимости пустые — только на mount.
   useEffect(() => {
     refreshApiKey();
-  }, [refreshApiKey]);
+  }, [refreshApiKey, selectedModel]);
 
-  // Тексты результатов по 3 источникам (map — чтобы избавиться от булевых
-  // тернарников «raw vs cleaned» при добавлении collapsed).
   const summaries: Record<Source, string> = {
     raw: summaryRaw,
     cleaned: summaryCleaned,
@@ -93,21 +87,15 @@ export function SummaryView() {
     cleaned: summaryCleaned.length > 0,
     collapsed: summaryCollapsed.length > 0,
   };
-  // Готовых (непустых) результатов ≥ 2 — diff доступен.
   const readyCount = (has.raw ? 1 : 0) + (has.cleaned ? 1 : 0) + (has.collapsed ? 1 : 0);
   const canDiff = readyCount >= 2;
 
-  // Автопереключение на diff — ОДИН раз, когда ≥2 результата впервые готовы и
-  // стрим остановлен. Раньше эффект перетягивал на diff при каждом изменении
-  // sourceTab, не давая удержать вкладку источника (баг: «Сохранить .md»
-  // исчезал). Флаг diffOffered гасит повторы; сбрасывается в runSummary.
   useEffect(() => {
     if (canDiff && streaming === null && !diffOfferedRef.current) {
       diffOfferedRef.current = true;
       setSourceTab("diff");
       return;
     }
-    // Если на diff, а готовых < 2 или стрим идёт — уходим на первый готовый.
     if (sourceTab === "diff" && (!canDiff || streaming !== null)) {
       const fallback: Source = has.raw ? "raw" : has.cleaned ? "cleaned" : "collapsed";
       setSourceTab(fallback);
@@ -115,49 +103,74 @@ export function SummaryView() {
   }, [canDiff, streaming, sourceTab, has.raw, has.cleaned, has.collapsed, setSourceTab]);
 
   const keyMissing = apiKeyAvailable === false;
-  const hasPrompt = settings.systemPromptPath.trim().length > 0;
+  const hasPrompt = settings?.systemPromptPath.trim().length ?? 0 > 0;
   const canRunRaw =
     !!transcript && yamlAvailable && hasPrompt && !keyMissing && streaming === null;
-  // cleaned и collapsed — оба производны от cleanResult, условия те же.
   const canRunCleaned =
     !!transcript && !!cleanResult && yamlAvailable && hasPrompt && !keyMissing && streaming === null;
   const canRunCollapsed = canRunCleaned;
 
-  // Выбор .md-файла системного промпта через нативный диалог. Путь (абсолютный,
-  // от Tauri) пишется в settings.yaml через store. Содержимое файла НЕ кешируется —
-  // читается перед каждым запуском в streamChatCompletion.
+  const isExternal = settings?.external ?? true;
+  const baseUrlCrypto = useMemo(
+    () => parseCryptoToken(settings?.baseUrl ?? ""),
+    [settings?.baseUrl],
+  );
+  const apiKeyCrypto = useMemo(
+    () => parseCryptoToken(settings?.apiKey ?? ""),
+    [settings?.apiKey],
+  );
+
   async function handlePickPromptFile() {
     try {
       const chosen = await pickFile({
         multiple: false,
         filters: [{ name: "Markdown", extensions: ["md"] }],
       });
-      if (typeof chosen !== "string") return;
-      setSettings({ systemPromptPath: chosen });
+      if (typeof chosen !== "string" || !settings) return;
+      setModelSettings(selectedModel, { systemPromptPath: chosen });
     } catch (e) {
       setError(`Ошибка выбора файла промпта: ${String(e)}`);
     }
   }
 
-  // Имя файла (basename) для показа в UI; полный путь — в tooltip.
   const promptFileName = useMemo(() => {
-    const p = settings.systemPromptPath;
+    const p = settings?.systemPromptPath ?? "";
     if (!p) return "";
-    // Берём последний сегмент пути (работает и для / и для \).
     const segs = p.split(/[\\/]/).filter(Boolean);
     return segs.length > 0 ? segs[segs.length - 1] : p;
-  }, [settings.systemPromptPath]);
+  }, [settings?.systemPromptPath]);
+
+  async function handleEncryptField(field: "baseUrl" | "apiKey", current: string) {
+    if (!settings) return;
+    const envVar = window.prompt(
+      "Переменная окружения с Fernet-ключом:",
+      "TRANSCRIPT_OPTIMIZER_KEY",
+    );
+    if (!envVar) return;
+    const plaintext = window.prompt("Значение для шифрования:", current);
+    if (plaintext === null) return;
+    const encrypted = await encryptText(plaintext, envVar);
+    if (encrypted) {
+      setModelSettings(selectedModel, { [field]: encrypted });
+      setError("");
+    } else {
+      setError(
+        "Не удалось зашифровать. Проверьте, что env-переменная содержит валидный Fernet-ключ.",
+      );
+    }
+  }
 
   async function runSummary(target: Source) {
-    if (!transcript) return;
+    if (!transcript || !settings) return;
     if (target !== "raw" && !cleanResult) return;
-    // collapsed — свёрнутая проекция cleanedText; НЕ зависит от флага просмотра.
+
     const text =
       target === "raw"
         ? transcript.raw
         : target === "cleaned"
           ? (cleanResult?.cleanedText ?? "")
           : collapseTimemarks(cleanResult?.cleanedText ?? "");
+
     if (text.length === 0) {
       setError(
         target === "raw"
@@ -170,33 +183,21 @@ export function SummaryView() {
     setError("");
     setStreaming(target);
     setters[target]("");
-
-    // Новый стрим — сбросить флаг «diff предложен», чтобы по завершении
-    // автопереключение на diff сработало снова (если ≥2 результата будут готовы).
     diffOfferedRef.current = false;
-
-    // Автопереключение на вкладку «Поток» активного источника — чтобы
-    // пользователь сразу видел, как стрим заполняется.
     setSourceTab(target);
     setViewMode("stream");
 
-    const apiKey = await (async () => {
-      // refreshApiKey уже звался на mount; ключ также пере-читаем на случай,
-      // если env изменили без перезапуска (best-effort).
-      const { getApiKey } = await import("../lib/llm");
-      return getApiKey();
-    })();
-
+    const apiKey = await getEffectiveApiKey(settings);
     if (!apiKey) {
       setStreaming(null);
       setError(
-        "OPENAI_API_KEY не задан в окружении. Установите его (setx на Windows) и перезапустите приложение.",
+        "API-ключ не задан: у модели нет api_key, а OPENAI_API_KEY не задан в окружении.",
       );
       return;
     }
 
     const result = await streamChatCompletion({
-      settings: settings as LlmSettings,
+      settings,
       transcriptText: text,
       apiKey,
       onDelta: (chunk) => {
@@ -208,45 +209,26 @@ export function SummaryView() {
     if (!result.ok) {
       setError(result.error ?? "Неизвестная ошибка стриминга.");
     } else {
-      // Успех — показываем финальный отрендеренный результат (а не сырой поток).
       setSourceTab(target);
       setViewMode("result");
     }
   }
 
-  // Активный источник (когда не diff) — sourceTab, суженный до Source.
-  // Используется для Потока/Результата/сохранения.
   const activeSource: Source =
     sourceTab === "cleaned" || sourceTab === "collapsed" ? sourceTab : "raw";
-
-  // Текст активного источника как есть (с <think>-рассуждениями) — для «Потока».
   const activeSourceText = summaries[activeSource];
   const activeSourceHas = has[activeSource];
 
-  // Очищенные от рассуждений версии (без <think>/<reasoning>/<reflection>).
-  // useMemo — чтобы не гонять stripReasoning на каждом рендере. Применяются в
-  // «Результат», Diff и при сохранении .md. «Поток» показывает исходный текст.
   const cleanedRaw = useMemo(() => stripReasoning(summaryRaw), [summaryRaw]);
-  const cleanedCleaned = useMemo(
-    () => stripReasoning(summaryCleaned),
-    [summaryCleaned],
-  );
-  const cleanedCollapsed = useMemo(
-    () => stripReasoning(summaryCollapsed),
-    [summaryCollapsed],
-  );
-  // Map очищенных версий по 3 источникам — для Результата/Diff/сохранения.
+  const cleanedCleaned = useMemo(() => stripReasoning(summaryCleaned), [summaryCleaned]);
+  const cleanedCollapsed = useMemo(() => stripReasoning(summaryCollapsed), [summaryCollapsed]);
   const cleanedSources: Record<Source, string> = {
     raw: cleanedRaw,
     cleaned: cleanedCleaned,
     collapsed: cleanedCollapsed,
   };
-  // Очищенный текст активного источника — для Результата/сохранения.
   const activeSourceCleaned = cleanedSources[activeSource];
 
-  // Сохранить финальный Markdown-результат через save-диалог. Доступно только
-  // на вкладке «Результат» (sourceTab !== "diff", viewMode === "result").
-  // Сохраняется ОЧИЩЕННЫЙ Markdown (без рассуждений) — его можно дальше открыть в редакторе.
   async function handleSaveMarkdown() {
     const text = activeSourceCleaned;
     if (!text) return;
@@ -255,7 +237,7 @@ export function SummaryView() {
         defaultPath: `summary-${sourceTab}.md`,
         filters: [{ name: "Markdown", extensions: ["md"] }],
       });
-      if (!path) return; // отмена
+      if (!path) return;
       await writeFile(path, text);
       setError("");
       setSaveStatus(`Сохранено: ${path}`);
@@ -265,14 +247,11 @@ export function SummaryView() {
     }
   }
 
-  // Рендер Markdown-результата: GFM-таблицы + raw HTML (для mermaid-svg и т.п.).
-  // Блоки ```mermaid → компонент <Mermaid>.
   const markdownComponents = useMemo(
     () => ({
       code(props: { className?: string; children?: React.ReactNode }) {
         const { className, children } = props;
         const text = String(children ?? "");
-        // Блочный fenced code с language-mermaid → рендерим диаграмму.
         if (className === "language-mermaid") {
           return <Mermaid chart={text} />;
         }
@@ -282,57 +261,157 @@ export function SummaryView() {
     [],
   );
 
+  if (!settings) {
+    return (
+      <div className="summary-view">
+        <div className="key-status key-status-missing">
+          Не выбрана модель. Добавьте модель в настройках LLM.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="summary-view">
       {/* Статус ключа */}
       {apiKeyAvailable === false && (
         <div className="key-status key-status-missing">
-          <strong>Ключ API не найден.</strong> Установите переменную окружения{" "}
-          <code>OPENAI_API_KEY</code> (на Windows:{" "}
-          <code>setx OPENAI_API_KEY &quot;sk-…&quot;</code>) и{" "}
-          <strong>перезапустите приложение</strong>, чтобы процесс подхватил
-          новый env-блок.
+          <strong>Ключ API не найден.</strong> Укажите <code>api_key</code> у модели «
+          {selectedModel}» или установите переменную окружения{" "}
+          <code>OPENAI_API_KEY</code>.
         </div>
       )}
       {apiKeyAvailable === true && (
         <div className="key-status key-status-ok">
-          Ключ <code>OPENAI_API_KEY</code> обнаружен в окружении.
+          Ключ API для модели «{selectedModel}» обнаружен.
         </div>
       )}
       {apiKeyAvailable === null && (
         <div className="key-status">Проверка наличия ключа…</div>
       )}
 
-      {/* Подсказка: настройки LLM живут в settings.yaml */}
       {!yamlAvailable && (
         <div className="key-status key-status-missing">
           <strong>Не открыта папка словарей.</strong> Настройки LLM хранятся в{" "}
-          <code>settings.yaml</code> (раздел <code>settings.llm</code>).
-          Откройте папку словарей в режиме «Словари», чтобы редактировать
-          настройки и запускать саммари.
+          <code>settings.yaml</code>. Откройте папку словарей в режиме «Словари», чтобы
+          редактировать настройки и запускать саммари.
         </div>
       )}
 
+      {/* Предупреждение о внешней модели */}
+      {isExternal && (
+        <div className="security-warning">
+          <strong>⚠️ Внешняя модель «{selectedModel}».</strong> Текст транскрипта будет
+          отправлен на сторонний сервер. Перед запуском проверьте транскрипт на наличие
+          персональных данных, паролей, токенов и коммерческой тайны.
+        </div>
+      )}
+
+      {/* Селектор модели */}
+      <div className="model-selector">
+        <label>
+          <span>Модель</span>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={!yamlAvailable}
+          >
+            {Object.keys(models).map((name) => {
+              const m = models[name];
+              const hasCrypto = isCryptoToken(m.baseUrl) || isCryptoToken(m.apiKey);
+              return (
+                <option key={name} value={name}>
+                  {name}
+                  {m.external ? " • external" : " • internal"}
+                  {hasCrypto ? " • 🔒" : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        <div className="model-actions">
+          <button
+            type="button"
+            className="btn-mini"
+            disabled={!yamlAvailable}
+            onClick={() => {
+              const name = window.prompt("Имя новой модели:");
+              if (name) addModel(name);
+            }}
+            title="Добавить модель"
+          >
+            + Добавить
+          </button>
+          <button
+            type="button"
+            className="btn-mini"
+            disabled={!yamlAvailable || Object.keys(models).length <= 1}
+            onClick={() => removeModel(selectedModel)}
+            title="Удалить выбранную модель"
+          >
+            Удалить
+          </button>
+          <button
+            type="button"
+            className="btn-mini"
+            disabled={!yamlAvailable}
+            onClick={() => {
+              const newName = window.prompt("Новое имя модели:", selectedModel);
+              if (newName && newName !== selectedModel) {
+                renameModel(selectedModel, newName);
+              }
+            }}
+            title="Переименовать модель"
+          >
+            Переименовать
+          </button>
+        </div>
+      </div>
+
       {/* Настройки LLM (скрыты по умолчанию) */}
       <details className="summary-settings">
-        <summary>Настройки LLM</summary>
+        <summary>Настройки LLM ({selectedModel})</summary>
         <div className="summary-settings-grid">
-          <label>
-            <span>Base URL</span>
-            <input
-              type="text"
-              value={settings.baseUrl}
-              placeholder="https://api.openai.com/v1"
-              onChange={(e) => setSettings({ baseUrl: e.target.value })}
-            />
-          </label>
+          <div className="summary-settings-full">
+            <label>
+              <span>Base URL</span>
+              <div className="crypto-input-row">
+                <input
+                  type="text"
+                  value={
+                    baseUrlCrypto
+                      ? `🔒 зашифровано (env: ${baseUrlCrypto.env})`
+                      : settings.baseUrl
+                  }
+                  placeholder="https://api.openai.com/v1"
+                  readOnly={!!baseUrlCrypto}
+                  onChange={(e) =>
+                    !baseUrlCrypto && setModelSettings(selectedModel, { baseUrl: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() =>
+                    handleEncryptField(
+                      "baseUrl",
+                      baseUrlCrypto ? "" : settings.baseUrl,
+                    )
+                  }
+                  title={baseUrlCrypto ? "Изменить зашифрованный base_url" : "Зашифровать base_url"}
+                >
+                  {baseUrlCrypto ? "Изменить 🔒" : "Зашифровать 🔒"}
+                </button>
+              </div>
+            </label>
+          </div>
           <label>
             <span>Model</span>
             <input
               type="text"
               value={settings.model}
               placeholder="gpt-4o-mini"
-              onChange={(e) => setSettings({ model: e.target.value })}
+              onChange={(e) => setModelSettings(selectedModel, { model: e.target.value })}
             />
           </label>
           <label>
@@ -344,7 +423,7 @@ export function SummaryView() {
               max="2"
               value={settings.temperature}
               onChange={(e) =>
-                setSettings({ temperature: Number(e.target.value) })
+                setModelSettings(selectedModel, { temperature: Number(e.target.value) })
               }
             />
           </label>
@@ -356,12 +435,55 @@ export function SummaryView() {
               min="1"
               value={settings.maxTokens}
               onChange={(e) =>
-                setSettings({ maxTokens: Number(e.target.value) })
+                setModelSettings(selectedModel, { maxTokens: Number(e.target.value) })
               }
             />
           </label>
-          {/* Файл системного промпта (.md). Тело промпта НЕ редактируется в UI —
-              только через выбор файла. Содержимое читается перед каждым запуском. */}
+          <div className="summary-settings-full">
+            <label>
+              <span>API key</span>
+              <div className="crypto-input-row">
+                <input
+                  type="text"
+                  value={
+                    apiKeyCrypto
+                      ? `🔒 зашифровано (env: ${apiKeyCrypto.env})`
+                      : settings.apiKey
+                  }
+                  placeholder="sk-... или crypto__ENV__..."
+                  readOnly={!!apiKeyCrypto}
+                  onChange={(e) =>
+                    !apiKeyCrypto && setModelSettings(selectedModel, { apiKey: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() =>
+                    handleEncryptField("apiKey", apiKeyCrypto ? "" : settings.apiKey)
+                  }
+                  title={apiKeyCrypto ? "Изменить зашифрованный api_key" : "Зашифровать api_key"}
+                >
+                  {apiKeyCrypto ? "Изменить 🔒" : "Зашифровать 🔒"}
+                </button>
+              </div>
+              <em>
+                Если пусто — используется <code>OPENAI_API_KEY</code> из окружения.
+              </em>
+            </label>
+          </div>
+          <label className="summary-settings-full">
+            <span>
+              <input
+                type="checkbox"
+                checked={settings.external}
+                onChange={(e) =>
+                  setModelSettings(selectedModel, { external: e.target.checked })
+                }
+              />{" "}
+              Внешняя модель (данные уходят за пределы локальной машины)
+            </span>
+          </label>
           <div className="summary-settings-full summary-prompt-row">
             <span className="summary-prompt-label">
               Файл промпта (.md){" "}
@@ -383,16 +505,13 @@ export function SummaryView() {
               </button>
               {hasPrompt ? (
                 <>
-                  <span
-                    className="summary-prompt-name"
-                    title={settings.systemPromptPath}
-                  >
+                  <span className="summary-prompt-name" title={settings.systemPromptPath}>
                     {promptFileName}
                   </span>
                   <button
                     type="button"
                     className="btn-mini"
-                    onClick={() => setSettings({ systemPromptPath: "" })}
+                    onClick={() => setModelSettings(selectedModel, { systemPromptPath: "" })}
                     title="Очистить путь к файлу промпта"
                   >
                     ✕
@@ -413,7 +532,7 @@ export function SummaryView() {
               value={settings.userPromptTemplate}
               placeholder="Сделай саммари: {transcript}"
               onChange={(e) =>
-                setSettings({ userPromptTemplate: e.target.value })
+                setModelSettings(selectedModel, { userPromptTemplate: e.target.value })
               }
             />
           </label>
@@ -437,7 +556,7 @@ export function SummaryView() {
                     ? "Нет API-ключа"
                     : streaming
                       ? "Идёт стриминг…"
-                      : "Саммари исходного транскрипта"
+                      : `Саммари исходного транскрипта (${selectedModel})`
           }
         >
           {streaming === "raw" ? "Стримится…" : "Саммари (raw)"}
@@ -459,7 +578,7 @@ export function SummaryView() {
                       ? "Нет API-ключа"
                       : streaming
                         ? "Идёт стриминг…"
-                        : "Саммари очищенного транскрипта"
+                        : `Саммари очищенного транскрипта (${selectedModel})`
           }
         >
           {streaming === "cleaned" ? "Стримится…" : "Саммари (cleaned)"}
@@ -481,7 +600,7 @@ export function SummaryView() {
                       ? "Нет API-ключа"
                       : streaming
                         ? "Идёт стриминг…"
-                        : "Саммари свёрнутого транскрипта (без избыточных таймштампов)"
+                        : `Саммари свёрнутого транскрипта (${selectedModel})`
           }
         >
           {streaming === "collapsed" ? "Стримится…" : "Саммари (collapsed)"}
@@ -501,7 +620,6 @@ export function SummaryView() {
       {/* Результат */}
       {(has.raw || has.cleaned || has.collapsed || streaming !== null) && (
         <div className="summary-result">
-          {/* Верхний ряд: Raw | Cleaned | Collapsed | Diff */}
           <div className="summary-tabs">
             <button
               className={sourceTab === "raw" ? "tab active" : "tab"}
@@ -534,7 +652,6 @@ export function SummaryView() {
             </button>
           </div>
 
-          {/* Под-вкладки: Поток | Результат — только для источников (не diff) */}
           {sourceTab !== "diff" && (
             <div className="summary-subtabs">
               <button
@@ -556,14 +673,7 @@ export function SummaryView() {
 
           {sourceTab === "diff" ? (
             <div className="summary-diff">
-              {/* Переключатель пары Diff: 3 варианта (raw↔cleaned, raw↔collapsed,
-                  cleaned↔collapsed). Кнопка disabled, если один из результатов
-                  пары пуст. Текущая пара подсвечена. */}
-              <DiffPairSelector
-                has={has}
-                pair={diffPair}
-                onChange={setDiffPair}
-              />
+              <DiffPairSelector has={has} pair={diffPair} onChange={setDiffPair} />
               <DiffEditor
                 original={cleanedSources[diffPair[0]]}
                 modified={cleanedSources[diffPair[1]]}
@@ -573,18 +683,15 @@ export function SummaryView() {
               />
             </div>
           ) : viewMode === "stream" ? (
-            // Поток — сырой текст из LLM в моноширинном <pre>, без рендера.
-            // Видно, как стрим заполняется по мере прихода чанков.
             <pre className="summary-stream">
               {activeSourceText || (streaming === activeSource ? "" : "(пусто)")}
               {streaming === activeSource && <span className="summary-stream-cursor" />}
             </pre>
           ) : (
-            // Результат — отрендеренный Markdown (GFM + Mermaid) + кнопка сохранения.
             <div className="summary-result-pane">
               <div className="summary-result-header">
                 <span className="summary-result-title">
-                  Саммари ({activeSource})
+                  Саммари ({activeSource}, {selectedModel})
                 </span>
                 <button
                   className="btn"
@@ -612,16 +719,14 @@ export function SummaryView() {
 
       {!has.raw && !has.cleaned && !has.collapsed && streaming === null && (
         <div className="summary-empty">
-          Нажмите «Саммари (raw)», «Саммари (cleaned)» или «Саммари (collapsed)»,
-          чтобы сгенерировать саммари. Результат появится здесь и будет рендериться live.
+          Нажмите «Саммари (raw)», «Саммари (cleaned)» или «Саммари (collapsed)», чтобы
+          сгенерировать саммари. Результат появится здесь и будет рендериться live.
         </div>
       )}
     </div>
   );
 }
 
-// Переключатель пары для Diff-вкладки. Три варианта пар источников; кнопка пары
-// disabled, если один из результатов пары пуст. Текущая пара подсвечена (active).
 const DIFF_PAIRS: [Source, Source][] = [
   ["raw", "cleaned"],
   ["raw", "collapsed"],

@@ -3,13 +3,19 @@ import { readFile, joinPath } from "./fs";
 import { useDictionaries } from "../store/dictionaries";
 
 // Настройки LLM для режима «Саммари». Хранятся в settings.yaml (раздел
-// settings.llm) через store/llm.ts. `baseUrl` — полный base с /v1;
+// settings.llm.models.<model>) через store/llm.ts. `baseUrl` — полный base с /v1;
 // `/chat/completions` доклеивает Rust-команда stream_chat.
 export interface LlmSettings {
   baseUrl: string;
   model: string;
   temperature: number;
   maxTokens: number;
+  // API-ключ. Может быть plain или в формате crypto__<ENV>__<ct>.
+  // Если пустой — fallback на OPENAI_API_KEY env.
+  apiKey: string;
+  // true: данные уходят на внешний сервер. Показываем предупреждение о
+  // конфиденциальности.
+  external: boolean;
   // Путь к .md-файлу системного промпта. Тело промпта НЕ хранится в settings.yaml —
   // только путь. Файл читается перед каждым запуском (правки во внешнем редакторе
   // подхватываются). Пустая строка = файл не выбран.
@@ -27,6 +33,8 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   model: "gpt-4o-mini",
   temperature: 0.3,
   maxTokens: 4096,
+  apiKey: "",
+  external: true,
   systemPromptPath: "",
   userPromptTemplate:
     "Сделай саммари следующего транскрипта:\n\n{transcript}",
@@ -40,6 +48,53 @@ export async function getApiKey(): Promise<string | null> {
     return key && key.length > 0 ? key : null;
   } catch {
     // Не Tauri-окружение (vite dev в браузере) или команда не зарегистрирована.
+    return null;
+  }
+}
+
+// Проверить, что строка — зашифрованный crypto-токен формата
+// `crypto__<ENV>__<ciphertext>`.
+export function isCryptoToken(s: string): boolean {
+  const parts = s.trim().split("__");
+  return parts.length === 3 && parts[0] === "crypto";
+}
+
+// Распарсить crypto-токен. Возвращает имя env-переменной с Fernet-ключом.
+export function parseCryptoToken(s: string): { env: string } | null {
+  const parts = s.trim().split("__");
+  if (parts.length !== 3 || parts[0] !== "crypto") return null;
+  return { env: parts[1] };
+}
+
+// Вернуть эффективный API-ключ для выбранной модели:
+// - если у модели задан apiKey (plain или crypto) — используем его;
+// - иначе fallback на OPENAI_API_KEY из окружения.
+export async function getEffectiveApiKey(
+  settings: LlmSettings,
+): Promise<string | null> {
+  if (settings.apiKey.trim().length > 0) {
+    return settings.apiKey;
+  }
+  return getApiKey();
+}
+
+// Сгенерировать новый Fernet-ключ (base64-url, 32 bytes). Используется в UI.
+export async function generateFernetKey(): Promise<string | null> {
+  try {
+    return await invoke<string>("generate_fernet_key");
+  } catch {
+    return null;
+  }
+}
+
+// Зашифровать plaintext через Rust с ключом из env `envVar`.
+export async function encryptText(
+  plaintext: string,
+  envVar: string,
+): Promise<string | null> {
+  try {
+    return await invoke<string>("encrypt_text", { plaintext, envVar });
+  } catch {
     return null;
   }
 }

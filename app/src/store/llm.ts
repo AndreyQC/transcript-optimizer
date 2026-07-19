@@ -1,8 +1,13 @@
 import { create } from "zustand";
-import { DEFAULT_LLM_SETTINGS, getApiKey, type LlmSettings } from "../lib/llm";
+import {
+  DEFAULT_LLM_SETTINGS,
+  getEffectiveApiKey,
+  type LlmSettings,
+} from "../lib/llm";
 import { useDictionaries } from "./dictionaries";
 import { setLlmSettings } from "../lib/yaml-edit";
 import type {
+  LlmModelConfig,
   LlmYamlSettings,
   Settings,
   SettingsFile,
@@ -11,99 +16,227 @@ import type {
 // Настройки LLM для режима «Саммари». Источник правды — подраздел `settings.llm`
 // в открытом settings.yaml (рядом с остальными словарями). НЕ localStorage:
 // настройки переезжают в YAML, чтобы версионироваться и переноситься с папкой
-// проекта. Если папка словарей не открыта — настройки недоступны (кнопки запуска
-// disabled), показываем DEFAULT_LLM_SETTINGS как «прочерк».
+// проекта.
 //
 // Внешний интерфейс store остаётся в camelCase (LlmSettings) — чтобы не трогать
 // SummaryView. Конвертация в/из snake_case (конвенция YAML-файлов) — здесь.
+// Поддерживается несколько моделей: settings.llm.models — карта, ключ = имя модели.
 
 interface LlmStore {
-  // Эффективные настройки для UI. Если settings.yaml не открыт — DEFAULT.
-  settings: LlmSettings;
+  // Карта моделей. Если settings.yaml не открыт — содержит одну default-модель.
+  models: Record<string, LlmSettings>;
+  // Имя активной модели (выбранной в UI). Синхронизируется с default_model в YAML.
+  selectedModel: string;
   // Открыт ли settings.yaml (есть ли куда сохранять).
   yamlAvailable: boolean;
-  setSettings: (patch: Partial<LlmSettings>) => void;
   // null = ещё не проверяли (режим Summary не открывали); true/false — есть/нет.
+  // Зависит от выбранной модели: apiKey модели или fallback OPENAI_API_KEY.
   apiKeyAvailable: boolean | null;
+
+  setSelectedModel: (name: string) => void;
+  addModel: (name: string, template?: LlmSettings) => void;
+  removeModel: (name: string) => void;
+  renameModel: (oldName: string, newName: string) => void;
+  setModelSettings: (name: string, patch: Partial<LlmSettings>) => void;
+  setDefaultModel: (name: string) => void;
   refreshApiKey: () => Promise<void>;
+
+  // Внутренний хелпер: записать текущее состояние в settings.yaml.
+  // Не вызывается напрямую из UI.
+  persist: (models: Record<string, LlmSettings>, defaultModel: string) => void;
 }
 
 // snake_case (YAML) → camelCase (UI).
-function fromYaml(y: LlmYamlSettings): LlmSettings {
+function fromYaml(y: LlmModelConfig): LlmSettings {
   return {
     baseUrl: y.base_url,
     model: y.model,
     temperature: y.temperature,
     maxTokens: y.max_tokens,
+    apiKey: y.api_key ?? "",
+    external: y.external ?? true,
     systemPromptPath: y.system_prompt_path ?? "",
     userPromptTemplate: y.user_prompt_template,
   };
 }
 
 // camelCase (UI) → snake_case (YAML).
-function toYaml(s: LlmSettings): LlmYamlSettings {
+function toYaml(s: LlmSettings): LlmModelConfig {
   return {
     base_url: s.baseUrl,
     model: s.model,
     temperature: s.temperature,
     max_tokens: s.maxTokens,
+    api_key: s.apiKey,
+    external: s.external,
     system_prompt_path: s.systemPromptPath,
     user_prompt_template: s.userPromptTemplate,
   };
 }
 
+function buildLlmYamlSettings(
+  models: Record<string, LlmSettings>,
+  defaultModel: string,
+): LlmYamlSettings {
+  const modelsYaml: Record<string, LlmModelConfig> = {};
+  for (const [name, settings] of Object.entries(models)) {
+    modelsYaml[name] = toYaml(settings);
+  }
+  return { default_model: defaultModel, models: modelsYaml };
+}
+
+function isOldLlmFormat(llm: unknown): llm is LlmModelConfig {
+  return (
+    typeof llm === "object" &&
+    llm !== null &&
+    !("models" in llm) &&
+    "base_url" in llm &&
+    "model" in llm
+  );
+}
+
 // Достать эффективные настройки из открытого settings.yaml. Если файл не открыт
-// или подраздел `llm` отсутствует — DEFAULT_LLM_SETTINGS (с мерджем по полям,
-// чтобы частично заданный llm не оставил undefined).
+// или подраздел `llm` отсутствует — DEFAULT_LLM_SETTINGS как модель `default`.
+// Поддерживает старый плоский формат settings.llm (до введения models).
 export function readLlmFromDictionaries(): {
-  settings: LlmSettings;
+  models: Record<string, LlmSettings>;
+  selectedModel: string;
   yamlAvailable: boolean;
 } {
   const entries = useDictionaries.getState().entries;
   const settingsEntry = entries.find((e) => e.kind === "settings");
   if (!settingsEntry) {
-    return { settings: { ...DEFAULT_LLM_SETTINGS }, yamlAvailable: false };
+    return {
+      models: { default: { ...DEFAULT_LLM_SETTINGS } },
+      selectedModel: "default",
+      yamlAvailable: false,
+    };
   }
+
   const data = settingsEntry.data as SettingsFile | null | undefined;
   const llm = (data?.settings as Settings | undefined)?.llm;
-  if (!llm) {
-    return { settings: { ...DEFAULT_LLM_SETTINGS }, yamlAvailable: true };
+
+  // Старый плоский формат → миграция в models.default.
+  if (llm && isOldLlmFormat(llm)) {
+    return {
+      models: { default: { ...DEFAULT_LLM_SETTINGS, ...fromYaml(llm) } },
+      selectedModel: "default",
+      yamlAvailable: true,
+    };
   }
-  // Мердж с дефолтами на случай отсутствующих полей (частично заданный llm).
-  return {
-    settings: { ...DEFAULT_LLM_SETTINGS, ...fromYaml(llm) },
-    yamlAvailable: true,
-  };
+
+  // Новый формат.
+  const modelsYaml = (llm as LlmYamlSettings | undefined)?.models;
+  if (!modelsYaml || Object.keys(modelsYaml).length === 0) {
+    return {
+      models: { default: { ...DEFAULT_LLM_SETTINGS } },
+      selectedModel: "default",
+      yamlAvailable: true,
+    };
+  }
+
+  const models: Record<string, LlmSettings> = {};
+  for (const [name, cfg] of Object.entries(modelsYaml)) {
+    models[name] = { ...DEFAULT_LLM_SETTINGS, ...fromYaml(cfg) };
+  }
+
+  const selectedModel =
+    (llm as LlmYamlSettings).default_model || Object.keys(models)[0];
+
+  return { models, selectedModel, yamlAvailable: true };
 }
 
 export const useLlm = create<LlmStore>((set, get) => ({
-  settings: readLlmFromDictionaries().settings,
+  models: readLlmFromDictionaries().models,
+  selectedModel: readLlmFromDictionaries().selectedModel,
   yamlAvailable: readLlmFromDictionaries().yamlAvailable,
-  setSettings: (patch) => {
-    const merged = { ...get().settings, ...patch };
-    set({ settings: merged });
+  apiKeyAvailable: null,
 
-    // Если settings.yaml открыт — пишем подраздел `llm` через AST-правку, чтобы
-    // попасть в undo-стек и пометить файл dirty. Если не открыт — правки живут
-    // только в памяти (сбросятся при перезагрузке).
+  setSelectedModel: (name) => {
+    if (!(name in get().models)) return;
+    set({ selectedModel: name });
+    get().persist(get().models, name);
+  },
+
+  addModel: (name, template) => {
+    if (!name.trim() || name in get().models) return;
+    const models = { ...get().models };
+    models[name] = { ...DEFAULT_LLM_SETTINGS, ...(template ?? {}) };
+    set({ models, selectedModel: name });
+    get().persist(models, name);
+  },
+
+  removeModel: (name) => {
+    if (!(name in get().models)) return;
+    const models = { ...get().models };
+    delete models[name];
+
+    let selectedModel = get().selectedModel;
+    if (selectedModel === name || !(selectedModel in models)) {
+      selectedModel = Object.keys(models)[0] ?? "default";
+    }
+    if (!models[selectedModel]) {
+      models[selectedModel] = { ...DEFAULT_LLM_SETTINGS };
+    }
+
+    set({ models, selectedModel });
+    get().persist(models, selectedModel);
+  },
+
+  renameModel: (oldName, newName) => {
+    if (!(oldName in get().models) || !newName.trim() || newName in get().models) return;
+    const models = { ...get().models };
+    models[newName] = models[oldName];
+    delete models[oldName];
+
+    let selectedModel = get().selectedModel;
+    if (selectedModel === oldName) selectedModel = newName;
+
+    set({ models, selectedModel });
+    get().persist(models, selectedModel);
+  },
+
+  setModelSettings: (name, patch) => {
+    if (!(name in get().models)) return;
+    const models = { ...get().models };
+    models[name] = { ...models[name], ...patch };
+    set({ models });
+    get().persist(models, get().selectedModel);
+  },
+
+  setDefaultModel: (name) => {
+    get().setSelectedModel(name);
+  },
+
+  refreshApiKey: async () => {
+    const settings = get().models[get().selectedModel];
+    if (!settings) {
+      set({ apiKeyAvailable: false });
+      return;
+    }
+    const key = await getEffectiveApiKey(settings);
+    set({ apiKeyAvailable: key !== null });
+  },
+
+  persist: (models, defaultModel) => {
     const state = useDictionaries.getState();
     const settingsEntry = state.entries.find((e) => e.kind === "settings");
     if (!settingsEntry) return;
 
-    const result = setLlmSettings(settingsEntry.raw, toYaml(merged));
+    const result = setLlmSettings(
+      settingsEntry.raw,
+      buildLlmYamlSettings(models, defaultModel),
+    );
     if (result.ok) {
-      // applyEdit пере-парсит data и пометит dirty + положит prev в undo-стек.
       state.applyEdit("settings", result.raw);
     }
-    // При ошибке правки (невалидный YAML и т.п.) — не роняем UI; в памяти уже
-    // обновлено, пользователь увидит несоответствие в редакторе settings.yaml.
-  },
-  apiKeyAvailable: null,
-  refreshApiKey: async () => {
-    const key = await getApiKey();
-    set({ apiKeyAvailable: key !== null });
   },
 }));
+
+// Вспомогательная функция для глубокого сравнения объектов (для подписки).
+function deepEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 // Подписка на dictionaries-store: при открытии папки / правке settings.yaml в
 // YamlEditor — обновляем эффективные настройки в llm-store. Подписываемся на
@@ -112,21 +245,15 @@ let unsubscribeDictionaries: (() => void) | null = null;
 function syncFromDictionaries() {
   if (unsubscribeDictionaries) return;
   unsubscribeDictionaries = useDictionaries.subscribe(() => {
-    const { settings, yamlAvailable } = readLlmFromDictionaries();
-    // Не перетираем локальные правки, пока они не сохранены в YAML: обновляем
-    // только если YAML-источник действительно изменился. Сравнение по значению,
-    // чтобы не плодить лишних set (примитивы внутри LlmSettings сравнимаются).
-    const cur = useLlm.getState().settings;
-    const same =
-      cur.baseUrl === settings.baseUrl &&
-      cur.model === settings.model &&
-      cur.temperature === settings.temperature &&
-      cur.maxTokens === settings.maxTokens &&
-      cur.systemPromptPath === settings.systemPromptPath &&
-      cur.userPromptTemplate === settings.userPromptTemplate;
-    if (!same) {
-      useLlm.setState({ settings, yamlAvailable });
-    } else if (useLlm.getState().yamlAvailable !== yamlAvailable) {
+    const { models, selectedModel, yamlAvailable } = readLlmFromDictionaries();
+    const cur = useLlm.getState();
+
+    const sameModels = deepEqual(cur.models, models);
+    const sameSelected = cur.selectedModel === selectedModel;
+
+    if (!sameModels || !sameSelected) {
+      useLlm.setState({ models, selectedModel, yamlAvailable });
+    } else if (cur.yamlAvailable !== yamlAvailable) {
       useLlm.setState({ yamlAvailable });
     }
   });

@@ -1272,3 +1272,71 @@ body {
   border-bottom: 1px solid var(--border);
   background-color: var(--bg-surface);
 }
+
+/* === Модели LLM: селектор, предупреждение, шифрование ===================== */
+
+/* Предупреждение о внешней модели */
+.security-warning {
+  background-color: var(--bg-surface);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Селектор модели */
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.model-selector label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex: 1 1 auto;
+}
+.model-selector select {
+  min-width: 200px;
+  padding: 4px 8px;
+  font-size: 13px;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.model-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* Строка с input + кнопкой шифрования */
+.crypto-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.crypto-input-row input {
+  flex: 1 1 auto;
+}
+.crypto-input-row .btn-mini {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Чекбокс external/internal */
+.summary-settings-grid label input[type="checkbox"] {
+  width: auto;
+  margin-right: 6px;
+}

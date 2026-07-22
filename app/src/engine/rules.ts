@@ -59,24 +59,50 @@ interface ReplaceIndex {
   // Требует ли capitalize в начале предложения (эвристика: to содержит заглавную).
   capitalize: boolean;
 }
-function buildReplaceIndex(replacements: ReplacementsFile | null): Map<string, ReplaceIndex> {
-  const idx = new Map<string, ReplaceIndex>();
-  if (!replacements) return idx;
+
+// Многословная фраза (≥ 2 слов после нормализации). Матчится подстрокой через
+// wordBoundaryRe, как filler_phrases — tokenize режет фразу по словам, поэтому
+// в Map<слово> её не положить (см. LESSONS_LEARNED §6).
+interface ReplacePhrase {
+  from: string; // нормализованная фраза (lowercase, с пробелами)
+  to: string;
+  ruleKey: string;
+  capitalize: boolean;
+}
+
+interface ReplaceIndices {
+  words: Map<string, ReplaceIndex>; // однословные from (как раньше)
+  phrases: ReplacePhrase[]; // многословные from (≥ 1 пробела)
+}
+
+// Разделить from на однословные (Map по norm) и многословные (список фраз).
+// Фразы сортируем по убыванию длины — чтобы «english club community» матчило
+// раньше «english club» (длинная закрывает токены, короткая уже не заденет).
+function buildReplaceIndices(replacements: ReplacementsFile | null): ReplaceIndices {
+  const words = new Map<string, ReplaceIndex>();
+  const phrases: ReplacePhrase[] = [];
+  if (!replacements) return { words, phrases };
   for (const [ruleKey, rule] of Object.entries(replacements.replacements ?? {})) {
     const r = rule as ReplacementRule;
     const capitalize = /[А-ЯA-Z]/.test(r.to.charAt(0));
     for (const from of r.from ?? []) {
-      idx.set(norm(from), { to: r.to, ruleKey, capitalize });
+      const n = norm(from);
+      if (n.includes(" ")) {
+        phrases.push({ from: n, to: r.to, ruleKey, capitalize });
+      } else {
+        words.set(n, { to: r.to, ruleKey, capitalize });
+      }
     }
   }
-  return idx;
+  phrases.sort((a, b) => b.from.length - a.from.length);
+  return { words, phrases };
 }
 
 // Главная функция: применить правила к распарсенному транскрипту.
 export function applyRules(transcript: ParsedTranscript, input: RuleInput): CleanResult {
   const minWordLen = input.settings?.min_word_len ?? 3;
   const wl = effectiveWhitelist(input.whitelist, input.replacements);
-  const replaceIdx = buildReplaceIndex(input.replacements);
+  const { words: replaceWords, phrases: replacePhrases } = buildReplaceIndices(input.replacements);
 
   // Filler — в нижнем регистре, множества для быстрого лукапа.
   const fillerWords = new Set((input.filler?.filler_words ?? []).map(norm));
@@ -105,7 +131,7 @@ export function applyRules(transcript: ParsedTranscript, input: RuleInput): Clea
     for (const utt of block.utterances) {
       const cleaned = cleanUtterance(
         utt,
-        { replaceIdx, fillerWords, fillerPhrases, keepOverride, wl, minWordLen },
+        { replaceWords, replacePhrases, fillerWords, fillerPhrases, keepOverride, wl, minWordLen },
         decorations,
         stats,
         hitMap,
@@ -125,7 +151,8 @@ export function applyRules(transcript: ParsedTranscript, input: RuleInput): Clea
 
 // Контекст очистки одной реплики (чтобы не тащить длинный список аргументов).
 interface CleanCtx {
-  replaceIdx: Map<string, ReplaceIndex>;
+  replaceWords: Map<string, ReplaceIndex>;
+  replacePhrases: ReplacePhrase[];
   fillerWords: Set<string>;
   fillerPhrases: string[];
   keepOverride: Set<string>;
@@ -170,16 +197,43 @@ function cleanUtterance(
   // Зачистка двойных пробелов после удаления фраз.
   text = text.replace(/[ \t]{2,}/g, " ").replace(/\s+\./g, ".").trim();
 
-  // 2. Replacements — по токенам (слово целиком), регистронезависимо.
-  // Делаем по исходному тексту, чтобы позиции decorations были корректны.
-  // Заменяем в `text`, но ищем позиции в `origText` (для упрощения MVP считаем
-  // позиции по текущему text — replacements применяются после filler, поэтому
-  // смещения могут отличаться; для decorations используем поиск по origText).
+  // 2. Replacements — фразы (2a) затем слова (2b), регистронезависимо.
+  // Decorations считаем по origText (для original pane), замену — в workText.
   const origTokens = tokenize(origText);
   let workText = text;
+  // Покрытые фразой диапазоны в координатах origText: чтобы шаг 2b и шаг 4
+  // (OOV) не трогали токены, целиком лежащие внутри заменённой фразы.
+  const covered: Array<{ start: number; end: number }> = [];
+
+  // 2a. Многословные replacement-фразы — одним .replace(re, fn), чтобы избежать
+  // двойной подстановки когда to ⊃ from (напр. «English Club» → «English Club
+  // community»: JS не ре-сканирует вставленный replacement). Порядок — по
+  // убыванию длины, см. buildReplaceIndices.
+  for (const phrase of ctx.replacePhrases) {
+    if (ctx.keepOverride.has(phrase.from)) continue;
+    const re = wordBoundaryRe(phrase.from, "gi");
+    // Декорации + hit — по позициям в origText.
+    for (const m of origText.matchAll(re)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      addDecoration(decorations, utt.lineNo, start + colShift + 1, end + colShift + 1, "will-replace", phrase.ruleKey);
+      addHit(hitMap, m[0], phrase.to, "replace", phrase.ruleKey);
+      stats.replaced += 1;
+      covered.push({ start, end });
+    }
+    // Замена в workText — одним проходом. isAtSentenceStart по workText
+    // (смещения с origText уже разошлись после шага 1).
+    workText = workText.replace(re, (_match, offset) => {
+      const isSentenceStart = isAtSentenceStart(workText, offset);
+      return phrase.capitalize && isSentenceStart ? capitalize(phrase.to) : phrase.to;
+    });
+  }
+
+  // 2b. Однословные replacements — по токенам (слово целиком).
   for (const tok of origTokens) {
+    if (isCoveredBy(covered, tok.start, tok.end)) continue;
     const key = norm(tok.value);
-    const rep = ctx.replaceIdx.get(key);
+    const rep = ctx.replaceWords.get(key);
     if (!rep) continue;
     if (ctx.keepOverride.has(key)) continue;
     // Позиция в origText + сдвиг префикса (1-based col).
@@ -201,7 +255,7 @@ function cleanUtterance(
   const toRemove: { value: string; start: number }[] = [];
   for (const tok of tokenize(text)) {
     const key = norm(tok.value);
-    if (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key) && !ctx.replaceIdx.has(key)) {
+    if (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key) && !ctx.replaceWords.has(key)) {
       toRemove.push({ value: tok.value, start: tok.start });
     }
   }
@@ -219,8 +273,10 @@ function cleanUtterance(
   for (const tok of origTokens) {
     const key = norm(tok.value);
     stats.totalWords += 1;
+    // токен внутри заменённой многословной фразы — не OOV и не short-garbage.
+    if (isCoveredBy(covered, tok.start, tok.end)) continue;
     // уже учтено как replacement/filler — пропускаем suspect-проверку
-    if (ctx.replaceIdx.has(key) || (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key))) continue;
+    if (ctx.replaceWords.has(key) || (ctx.fillerWords.has(key) && !ctx.keepOverride.has(key))) continue;
     if (ctx.wl.has(key)) continue;
     if (tok.value.length < ctx.minWordLen) {
       addDecoration(decorations, utt.lineNo, tok.start + colShift + 1, tok.end + colShift + 1, "short-garbage", undefined, tok.value);
@@ -266,6 +322,20 @@ function addHit(
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Попадает ли диапазон [s, e) целиком внутрь одного из покрытых фразой span'ов.
+// Используется на шагах 2b и 4, чтобы не трогать токены, уже обработанные
+// многословной replacement-фразой.
+function isCoveredBy(
+  spans: ReadonlyArray<{ start: number; end: number }>,
+  s: number,
+  e: number,
+): boolean {
+  for (const sp of spans) {
+    if (s >= sp.start && e <= sp.end) return true;
+  }
+  return false;
 }
 
 // Regex для точного совпадения слова/фразы с границами. JS-овый `\b` определён

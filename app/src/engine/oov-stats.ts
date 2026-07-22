@@ -31,6 +31,12 @@ export interface OovStatsContext {
   phraseNorms: string[];
 }
 
+// Чистые числа (10, 50, 2026) не показываем как OOV — это шум, не требующий
+// решения пользователя. Одна или более Unicode-цифр; для чисел norm(display)
+// идентичен display. Составные числа с разделителями (10.5, 1,000) tokenize
+// уже режет на отдельные числовые токены — каждый исключается этим правилом.
+const NUMERIC_RE = /^\p{N}+$/u;
+
 // Диапазон вхождения фразы в тексте одной реплики (без префикса [HH:MM:SS]).
 interface PhraseSpan {
   start: number; // 0-based, относительно utt.text
@@ -64,7 +70,16 @@ export function buildOovRows(
   }
   if (map.size === 0) return [];
 
-  // 2. Если контекста нет / фраз нет — отдаём как есть.
+  // 2. Скрыть чистые числа (10, 50, 2026) — не требуют действия пользователя.
+  //    По принципу §6: фильтрация шума — в агрегаторе, движок остаётся
+  //    источником истины для decorations (числа остаются подсвеченными в
+  //    transcript, но пропадают из OOV-грида).
+  for (const key of map.keys()) {
+    if (NUMERIC_RE.test(key)) map.delete(key);
+  }
+  if (map.size === 0) return [];
+
+  // 3. Если контекста нет / фраз нет — отдаём как есть.
   if (!ctx || !ctx.phraseNorms || ctx.phraseNorms.length === 0) {
     return [...map.values()].sort(
       (a, b) => b.count - a.count || a.display.localeCompare(b.display),
@@ -77,13 +92,13 @@ export function buildOovRows(
     );
   }
 
-  // 3. Собрать по utterance.text:
+  // 4. Собрать по utterance.text:
   //    - phraseSpansByLine: нормализованная фраза → Set диапазонов по каждой строке;
   //    - tokenOccurrences: norm → список координат (lineNo,start,end) каждого вхождения.
   const phraseSpansByLine = collectPhraseSpans(transcript, ctx.phraseNorms);
   const tokenOccurrences = collectTokenOccurrences(transcript);
 
-  // 4. Для каждого norm в map: если ВСЕ его вхождения лежат внутри фраз —
+  // 5. Для каждого norm в map: если ВСЕ его вхождения лежат внутри фраз —
   //    удалить из map. Для каждого occ — есть ли хотя бы один диапазон на его
   //    lineNo, в который occ[start..end) ⊂ span.
   for (const [key] of map) {

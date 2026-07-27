@@ -113,3 +113,63 @@ export function exportGlossaryMarkdown(input: ExportInput): string {
 
   return lines.join("\n");
 }
+
+// === Уплотнённый справочник замен ============================================
+// Используется в двух потоках:
+//   1. системный промпт саммари (streamChatCompletion в lib/llm.ts) — там к телу
+//      спереди добавляется заголовок "🔹 СЛОВАРЬ НОРМАЛИЗАЦИИ ..." и обёртка
+//      "ВАЖНО: ... / Используй исправленный текст ...";
+//   2. артефакт на диске replacements.compact.txt (Toolbar) — для внешнего
+//      пайплайна. Пишется как есть, без заголовка/обёртки.
+//
+// Поэтому функция возвращает ТОЛЬКО тело — по одной строке на правило. Один и
+// тот же артефакт годится и для промпта, и для пайплайна.
+
+interface CompactEntry {
+  to: string;
+  variants: string[]; // из from / from_lemmas
+  label: string;
+}
+
+// Построить уплотнённый справочник нормализации. Возвращает только тело
+// (по строке на правило), БЕЗ заголовка и БЕЗ обёртки промпта.
+//
+// Формат одной строки:
+//   <вариант1>/<вариант2>/... → <to> (<label>)
+// Если from/from_lemmas пустой или to пустой — правило пропускается.
+// Возвращает пустую строку, если replacements == null или правил нет.
+export function buildCompactReplacements(
+  replacements: ReplacementsFile | null,
+): string {
+  if (!replacements) return "";
+
+  const entries: CompactEntry[] = [];
+
+  // Точные замены (from).
+  for (const rule of Object.values(replacements.replacements ?? {})) {
+    const r = rule as ReplacementRule;
+    const variants = (r.from ?? []).filter((v) => typeof v === "string" && v.length > 0);
+    const to = (r.to ?? "").trim();
+    if (variants.length === 0 || to.length === 0) continue;
+    entries.push({ to, variants, label: r.label });
+  }
+
+  // Замены по лемме (from_lemmas). Пометки источника не добавляем — для
+  // компактности (см. план 20260727_001 §4 «Что включать в справочник»).
+  for (const rule of Object.values(replacements.lemma_replacements ?? {})) {
+    const r = rule as LemmaRule;
+    const variants = (r.from_lemmas ?? []).filter(
+      (v) => typeof v === "string" && v.length > 0,
+    );
+    const to = (r.to ?? "").trim();
+    if (variants.length === 0 || to.length === 0) continue;
+    entries.push({ to, variants, label: r.label });
+  }
+
+  if (entries.length === 0) return "";
+
+  const lines = entries.map(
+    (e) => `${e.variants.join("/")} → ${e.to} (${e.label})`,
+  );
+  return lines.join("\n");
+}

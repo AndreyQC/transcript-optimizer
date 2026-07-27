@@ -55,6 +55,7 @@ function fromYaml(y: LlmModelConfig): LlmSettings {
     maxTokens: y.max_tokens,
     apiKey: y.api_key ?? "",
     external: y.external ?? true,
+    mixReplacements: y.mix_replacements ?? true,
     systemPromptPath: y.system_prompt_path ?? "",
     userPromptTemplate: y.user_prompt_template,
   };
@@ -69,6 +70,7 @@ function toYaml(s: LlmSettings): LlmModelConfig {
     max_tokens: s.maxTokens,
     api_key: s.apiKey,
     external: s.external,
+    mix_replacements: s.mixReplacements,
     system_prompt_path: s.systemPromptPath,
     user_prompt_template: s.userPromptTemplate,
   };

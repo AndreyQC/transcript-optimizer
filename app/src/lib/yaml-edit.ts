@@ -239,6 +239,9 @@ export function setLlmSettings(raw: string, llm: LlmYamlSettings): EditResult {
         // external: true — данные уходят на внешний сервер; false — локальная/внутренняя.
         // Явно пишем true, чтобы пользователь видел статус в YAML.
         external: cfg.external ?? true,
+        // mix_replacements: вклеивать уплотнённый справочник замен в системный
+        // промпт саммари. Явно пишем true — соответствует DEFAULT_LLM_SETTINGS.
+        mix_replacements: cfg.mix_replacements ?? true,
         // system_prompt_path — путь к .md-файлу промпта (опциональный; пустая
         // строка = файл не выбран). Тело промпта в YAML не дублируется.
         system_prompt_path: cfg.system_prompt_path ?? "",

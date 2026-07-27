@@ -484,6 +484,18 @@ export function SummaryView() {
               Внешняя модель (данные уходят за пределы локальной машины)
             </span>
           </label>
+          <label className="summary-settings-full">
+            <span>
+              <input
+                type="checkbox"
+                checked={settings.mixReplacements}
+                onChange={(e) =>
+                  setModelSettings(selectedModel, { mixReplacements: e.target.checked })
+                }
+              />{" "}
+              Подмешивать справочник замен в промпт (уплотнённый replacements.yaml)
+            </span>
+          </label>
           <div className="summary-settings-full summary-prompt-row">
             <span className="summary-prompt-label">
               Файл промпта (.md){" "}

@@ -1,6 +1,8 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readFile, joinPath } from "./fs";
 import { useDictionaries } from "../store/dictionaries";
+import { buildCompactReplacements } from "./glossary-export";
+import type { ReplacementsFile } from "../types/dictionaries";
 
 // Настройки LLM для режима «Саммари». Хранятся в settings.yaml (раздел
 // settings.llm.models.<model>) через store/llm.ts. `baseUrl` — полный base с /v1;
@@ -16,6 +18,10 @@ export interface LlmSettings {
   // true: данные уходят на внешний сервер. Показываем предупреждение о
   // конфиденциальности.
   external: boolean;
+  // true: в системный промпт саммари вклеивается уплотнённый справочник замен
+  // (buildCompactReplacements из replacements.yaml). Чекбокс в настройках LLM;
+  // нужен для A/B-сравнения влияния замен на выходной саммари.
+  mixReplacements: boolean;
   // Путь к .md-файлу системного промпта. Тело промпта НЕ хранится в settings.yaml —
   // только путь. Файл читается перед каждым запуском (правки во внешнем редакторе
   // подхватываются). Пустая строка = файл не выбран.
@@ -35,10 +41,22 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   maxTokens: 4096,
   apiKey: "",
   external: true,
+  mixReplacements: true,
   systemPromptPath: "",
   userPromptTemplate:
     "Сделай саммари следующего транскрипта:\n\n{transcript}",
 };
+
+// === Обрамление уплотнённого справочника замен в системном промпте ===========
+// Применяется ТОЛЬКО в streamChatCompletion — в файл replacements.compact.txt
+// заголовок и обёртку НЕ пишем (там только тело от buildCompactReplacements,
+// пайплайн оборачивает сам). См. план 20260727_001 §3, §5.
+const COMPACT_HEADER =
+  "🔹 СЛОВАРЬ НОРМАЛИЗАЦИИ (исправлять ДО генерации саммари):";
+const NORMALIZATION_INTRO_PRE =
+  "ВАЖНО: Перед генерацией саммари примени автозамену терминов в транскрипте по правилам:\n";
+const NORMALIZATION_INTRO_POST =
+  '\n\nИспользуй исправленный текст как основу. В финальном саммари выводи ТОЛЬКО нормализованные варианты (колонка "→").';
 
 // Прочитать OpenAI-ключ из окружения процесса (через Rust-команду). Возвращает
 // null вне Tauri или если ключ не задан. Без try/catch invoke падает в браузере.
@@ -149,6 +167,29 @@ export async function streamChatCompletion(
     return { ok: false, error: `Файл промпта пуст: ${resolvedPath}` };
   }
 
+  // Если включено mixReplacements — дописать уплотнённый справочник замен в
+  // конец системного промпта. Берём replacements из dictionaries-store (поле
+  // data — реактивно обновляется при правках в Monaco, в т.ч. несохранённых).
+  // buildCompactReplacements возвращает только тело (без заголовка/обёртки),
+  // поэтому COMPACT_HEADER и NORMALIZATION_INTRO_* добавляем здесь.
+  let finalSystemContent = systemContent;
+  if (settings.mixReplacements) {
+    const entries = useDictionaries.getState().entries;
+    const replEntry = entries.find((e) => e.kind === "replacements");
+    const repl = (replEntry?.data ?? null) as ReplacementsFile | null;
+    const compactBody = buildCompactReplacements(repl);
+    if (compactBody.length > 0) {
+      finalSystemContent =
+        systemContent +
+        "\n\n" +
+        NORMALIZATION_INTRO_PRE +
+        COMPACT_HEADER +
+        "\n" +
+        compactBody +
+        NORMALIZATION_INTRO_POST;
+    }
+  }
+
   const userContent = settings.userPromptTemplate.replace(
     "{transcript}",
     transcriptText,
@@ -160,7 +201,7 @@ export async function streamChatCompletion(
     max_tokens: settings.maxTokens,
     stream: true,
     messages: [
-      { role: "system", content: systemContent },
+      { role: "system", content: finalSystemContent },
       { role: "user", content: userContent },
     ],
   };

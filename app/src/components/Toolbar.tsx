@@ -5,7 +5,7 @@ import { useTranscript } from "../store/transcript";
 import { useMarkdown } from "../store/markdown";
 import { useTheme } from "../store/theme";
 import { detectDictionaries, pickDir, writeFile as writeFileFn, joinPath, readFile as readFileFn } from "../lib/fs";
-import { exportGlossaryMarkdown } from "../lib/glossary-export";
+import { exportGlossaryMarkdown, buildCompactReplacements } from "../lib/glossary-export";
 import { applyRules } from "../engine/rules";
 import type { ReplacementsFile, GlossaryFile, Settings, FillerFile, WhitelistFile } from "../types/dictionaries";
 
@@ -82,7 +82,15 @@ export function Toolbar({ mode }: { mode: Mode }) {
     try {
       await writeFileFn(activeEntry.path, activeEntry.raw);
       markSaved(activeEntry.kind, activeEntry.raw);
-      setStatus(`Сохранено: ${activeEntry.path}`);
+      let msg = `Сохранено: ${activeEntry.path}`;
+      // Если сохраняли replacements — синхронно перегенерируем компакт-файл,
+      // чтобы артефакт на диске всегда был синхронен с исходником (для
+      // внешнего пайплайна). writeCompactFile читает актуальный replacements
+      // из store (уже обновлён после правок в Monaco к этому моменту).
+      if (activeEntry.kind === "replacements") {
+        msg += await writeCompactFile();
+      }
+      setStatus(msg);
     } catch (e) {
       setStatus(`Ошибка сохранения: ${String(e)}`);
     }
@@ -97,6 +105,37 @@ export function Toolbar({ mode }: { mode: Mode }) {
       setStatus(`Глоссарий экспортирован: ${path}`);
     } catch (e) {
       setStatus(`Ошибка экспорта: ${String(e)}`);
+    }
+  }
+
+  // Записать replacements.compact.txt рядом с replacements.yaml — для внешнего
+  // пайплайна. Берём актуальный replacements из store (поле data, реактивно
+  // обновляется при правках в Monaco). Если replacements пуст/нет или dir не
+  // задан — тихо пропускаем. НЕ роняет вызывающий флоу: ошибки записи
+  // возвращаются в строке статуса, но не бросаются.
+  // Возвращает дополнение к строке статуса (с префиксом ' ; ') или '' если
+  // ничего не писали.
+  async function writeCompactFile(): Promise<string> {
+    if (!dir) return ""; // папка не открыта — вне пайплайна
+    const body = buildCompactReplacements(replacements);
+    if (body.length === 0) return ""; // нечего писать
+    const path = joinPath(dir, "replacements.compact.txt");
+    try {
+      await writeFileFn(path, body);
+      return ` ; compact: ${path}`;
+    } catch (e) {
+      return ` ; compact FAILED: ${String(e)}`;
+    }
+  }
+
+  async function handleExportCompact() {
+    if (!dir) return;
+    try {
+      const msg = await writeCompactFile();
+      if (msg) setStatus(`Compact экспортирован${msg}`);
+      else setStatus("Нет правил replacements для экспорта.");
+    } catch (e) {
+      setStatus(`Ошибка экспорта compact: ${String(e)}`);
     }
   }
 
@@ -182,6 +221,7 @@ export function Toolbar({ mode }: { mode: Mode }) {
 
   const canSave = !!activeEntry?.dirty;
   const canExport = !!dir && (!!replacements || !!glossary);
+  const canExportCompact = !!dir && !!replacements;
   const canClean = !!transcript;
 
   if (mode === "summary") {
@@ -285,6 +325,20 @@ export function Toolbar({ mode }: { mode: Mode }) {
       </button>
       <button onClick={handleExportGlossary} className="btn" disabled={!canExport}>
         Экспорт GLOSSARY.md
+      </button>
+      <button
+        onClick={handleExportCompact}
+        className="btn"
+        disabled={!canExportCompact}
+        title={
+          !dir
+            ? "Откройте папку словарей"
+            : !replacements
+              ? "Нет открытого replacements.yaml"
+              : "Записать replacements.compact.txt рядом с replacements.yaml (для внешнего пайплайна)"
+        }
+      >
+        Экспорт compact.txt
       </button>
       <span className="status">{status}</span>
     </header>

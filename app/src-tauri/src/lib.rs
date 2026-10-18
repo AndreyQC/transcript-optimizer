@@ -3,6 +3,7 @@ use tauri::ipc::Channel;
 use tauri_plugin_http::reqwest;
 
 mod crypto;
+mod transcribe;
 
 // Один чанк SSE-стрима, прокидываемый во фронтенд через Channel.
 // `data` — сырые байты ответа; фронтенд парсит SSE-формат сам (толерантно).
@@ -103,12 +104,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_openai_api_key,
             generate_fernet_key,
             encrypt_text,
             resolve_crypto_token,
-            stream_chat
+            stream_chat,
+            transcribe::run_transcription,
+            transcribe::transcribe_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

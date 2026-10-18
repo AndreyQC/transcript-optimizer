@@ -1340,3 +1340,76 @@ body {
   width: auto;
   margin-right: 6px;
 }
+
+/* ---- Панель «Транскрибация» ---- */
+.transcribe-panel {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.transcribe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.transcribe-label {
+  min-width: 110px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+.transcribe-inline {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.transcribe-input {
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+.transcribe-select {
+  flex: 0 1 300px;
+}
+.transcribe-num {
+  width: 70px;
+}
+.transcribe-btn.primary {
+  font-weight: 600;
+}
+.transcribe-btn.danger {
+  color: #b4413c;
+}
+.transcribe-progress-text {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.transcribe-progress {
+  flex: 1 1 120px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border-color, #ccc);
+  overflow: hidden;
+}
+.transcribe-progress-fill {
+  height: 100%;
+  background: var(--accent, #4a90d9);
+  transition: width 0.3s;
+}
+.transcribe-error {
+  color: #b4413c;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.transcribe-summary {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.transcribe-hint {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 8px;
+}

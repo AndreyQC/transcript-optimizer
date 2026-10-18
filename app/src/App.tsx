@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Toolbar } from "./components/Toolbar";
@@ -8,15 +8,16 @@ import { EditPanel } from "./components/EditPanel";
 import { TranscriptView } from "./components/TranscriptView";
 import { SummaryView } from "./components/SummaryView";
 import { MarkdownView } from "./components/MarkdownView";
+import { TranscribePanel } from "./components/TranscribePanel";
 import { useDictionaries } from "./store/dictionaries";
 import { useTranscript } from "./store/transcript";
 import { useMarkdown } from "./store/markdown";
+import { useUi } from "./store/ui";
 import "./App.css";
 
-type Mode = "dictionaries" | "transcript" | "summary" | "markdown";
-
 function App() {
-  const [mode, setMode] = useState<Mode>("dictionaries");
+  const mode = useUi((s) => s.mode);
+  const setMode = useUi((s) => s.setMode);
 
   // Связка stores: при изменении содержимого словарей (entries) помечать
   // существующий результат очистки устаревшим. Подписываемся на массив raw
@@ -91,6 +92,12 @@ function App() {
         >
           Markdown
         </button>
+        <button
+          className={mode === "transcribe" ? "mode-btn active" : "mode-btn"}
+          onClick={() => setMode("transcribe")}
+        >
+          Транскрибация
+        </button>
       </nav>
       <Toolbar mode={mode} />
       {mode === "dictionaries" ? (
@@ -110,6 +117,10 @@ function App() {
       ) : mode === "markdown" ? (
         <div className="transcript-container">
           <MarkdownView />
+        </div>
+      ) : mode === "transcribe" ? (
+        <div className="transcript-container">
+          <TranscribePanel />
         </div>
       ) : (
         <SummaryView />

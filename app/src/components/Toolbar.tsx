@@ -9,7 +9,7 @@ import { exportGlossaryMarkdown, buildCompactReplacements } from "../lib/glossar
 import { applyRules } from "../engine/rules";
 import type { ReplacementsFile, GlossaryFile, Settings, FillerFile, WhitelistFile } from "../types/dictionaries";
 
-type Mode = "dictionaries" | "transcript" | "summary" | "markdown";
+type Mode = "dictionaries" | "transcript" | "summary" | "markdown" | "transcribe";
 
 // Тулбар. В режиме «Словари»: открыть папку/сохранить/экспорт глоссария.
 // В режиме «Транскрипт»: открыть транскрипт / применить правила (Очистить).

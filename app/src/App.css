@@ -1413,3 +1413,46 @@ body {
   opacity: 0.6;
   margin-top: 8px;
 }
+
+/* ---- Агент предложений ---- */
+.agent-proposals {
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-proposals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.agent-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.agent-from {
+  flex: 0 1 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-similar {
+  opacity: 0.6;
+}
+.agent-arrow { opacity: 0.5; }
+.agent-to {
+  flex: 1 1 40%;
+  min-width: 100px;
+}

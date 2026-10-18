@@ -162,6 +162,32 @@ export function Toolbar({ mode }: { mode: Mode }) {
       setStatus(
         `Очищено: замен ${result.stats.replaced}, удалено ${result.stats.removed}, подозрительных ${result.stats.suspect}`,
       );
+      // Post-processing hooks (fire-and-forget): конфиг hooks.yaml из папки
+      // словарей; ошибка хука не роняет очистку (событие hook-error в UI).
+      void (async () => {
+        try {
+          const first = useDictionaries.getState().entries[0];
+          if (!first) return;
+          const dir = first.path.replace(/[\\/][^\\/]+$/, "");
+          const sep = dir.endsWith("\\") || dir.endsWith("/") ? "" : "/";
+          let ym: unknown = null;
+          try {
+            const raw = await readFileFn(`${dir}${sep}hooks.yaml`);
+            const parsed = (await import("yaml")).parse(raw) as { yandex_messenger?: unknown };
+            ym = parsed.yandex_messenger ?? null;
+          } catch {
+            /* hooks.yaml нет — дефолты (хук выключен) */
+          }
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("run_post_hooks", {
+            transcript: result.cleanedText,
+            videoPath: transcript.path,
+            yandexMessenger: ym,
+          });
+        } catch (e) {
+          console.warn("post hooks failed:", e);
+        }
+      })();
     } catch (e) {
       setStatus(`Ошибка очистки: ${String(e)}`);
     }

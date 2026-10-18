@@ -96,6 +96,24 @@ export interface WhitelistFile {
   common_words: string[];
 }
 
+// presets.yaml — пресеты пайплайна транскрибации (Phase 10).
+// initial_prompt хранится, но в ASR не подаётся (parakeet не принимает;
+// задел под будущие whisper-движки) — имена/термины правит replacements.
+export interface PresetsFile {
+  presets: Preset[];
+}
+export interface Preset {
+  id: string;
+  name: string;
+  engine?: "parakeet" | "gigaam";
+  model_dir?: string;
+  initial_prompt?: string;
+  chunk_secs?: number;
+  max_speakers?: number | null;
+  clusterer?: "vbx" | "ahc";
+  embed_window_secs?: number | null;
+}
+
 // Дискриминированное объединение для UI
 export type DictKind =
   | "settings"
@@ -103,7 +121,8 @@ export type DictKind =
   | "filler"
   | "replacements"
   | "lemma_irregular"
-  | "whitelist";
+  | "whitelist"
+  | "presets";
 
 export type DictFile =
   | { kind: "settings"; data: SettingsFile }
@@ -111,7 +130,8 @@ export type DictFile =
   | { kind: "filler"; data: FillerFile }
   | { kind: "replacements"; data: ReplacementsFile }
   | { kind: "lemma_irregular"; data: LemmaIrregularFile }
-  | { kind: "whitelist"; data: WhitelistFile };
+  | { kind: "whitelist"; data: WhitelistFile }
+  | { kind: "presets"; data: PresetsFile };
 
 // Контракт имён файлов (автодетект по точному имени).
 export const FILE_CONTRACT: Record<string, DictKind> = {
@@ -121,6 +141,7 @@ export const FILE_CONTRACT: Record<string, DictKind> = {
   "replacements.yaml": "replacements",
   "lemma_irregular.yaml": "lemma_irregular",
   "detector_whitelist.yaml": "whitelist",
+  "presets.yaml": "presets",
 };
 
 // Запись о словаре в store: путь, разобранные данные, сырой текст, флаг несохранённых правок.
@@ -140,6 +161,7 @@ export const TAB_ORDER: DictKind[] = [
   "replacements",
   "lemma_irregular",
   "whitelist",
+  "presets",
 ];
 
 export const KIND_LABEL: Record<DictKind, string> = {
@@ -149,4 +171,5 @@ export const KIND_LABEL: Record<DictKind, string> = {
   replacements: "replacements",
   lemma_irregular: "lemma_irregular",
   whitelist: "detector_whitelist",
+  presets: "пресеты",
 };

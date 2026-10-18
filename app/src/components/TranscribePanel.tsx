@@ -1,11 +1,33 @@
+import { useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useTranscribe, stageLabel } from "../store/transcribe";
+import { useTranscribe, stageLabel, type TranscribeEngine } from "../store/transcribe";
+import { useDictionaries } from "../store/dictionaries";
+import type { PresetsFile } from "../types/dictionaries";
 
 // Панель «Транскрибация»: форма запуска sidecar-пайплайна + прогресс.
 // Результат открывается во вкладке «Транскрипт» (там замены/саммари).
 export function TranscribePanel() {
   const s = useTranscribe();
   const running = s.running;
+
+  // Пресеты из presets.yaml (kind "presets" файлового контракта).
+  // Подписка на стабильный entry (урок LESSONS §3), производный массив —
+  // в useMemo.
+  const presetsEntry = useDictionaries((st) =>
+    st.entries.find((e) => e.kind === "presets"),
+  );
+  const presets = useMemo(
+    () => (presetsEntry?.data as PresetsFile | undefined)?.presets ?? [],
+    [presetsEntry],
+  );
+
+  const applyPreset = (id: string) => {
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    if (preset.engine) s.setEngine(preset.engine as TranscribeEngine);
+    if (preset.model_dir) s.setModelDir(preset.model_dir);
+    s.setMaxSpeakers(preset.max_speakers ?? null);
+  };
 
   const progressPct = (() => {
     if (!running || !s.stage || !s.stageProgress || s.stageProgress.n === 0) return null;
@@ -15,6 +37,24 @@ export function TranscribePanel() {
 
   return (
     <div className="transcribe-panel">
+      {presets.length > 0 && (
+        <div className="transcribe-row">
+          <label className="transcribe-label">Пресет</label>
+          <select
+            className="transcribe-select"
+            defaultValue=""
+            disabled={running}
+            onChange={(e) => applyPreset(e.target.value)}
+          >
+            <option value="">— вручную —</option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="transcribe-row">
         <label className="transcribe-label">Видеофайл</label>
         <input

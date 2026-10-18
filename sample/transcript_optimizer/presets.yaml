@@ -1,0 +1,20 @@
+# Пресеты пайплайна транскрибации (Phase 10).
+# Выбор — в панели «Транскрибация»; поля пресета заполняют форму запуска.
+#
+# initial_prompt хранится как задел под whisper-движки: parakeet его не
+# принимает, имена/термины правятся replacements.yaml после распознавания.
+presets:
+  - id: meeting-parakeet
+    name: Встреча (parakeet, авто-спикеры)
+    engine: parakeet
+    # model_dir: укажите абсолютный путь к каталогу модели или используйте
+    # кнопку «AivoRelay» в панели.
+    chunk_secs: 120
+    max_speakers: null
+    initial_prompt: ""
+  - id: meeting-parakeet-4spk
+    name: Встреча до 4 спикеров
+    engine: parakeet
+    chunk_secs: 120
+    max_speakers: 4
+    initial_prompt: ""

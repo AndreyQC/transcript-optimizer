@@ -1,0 +1,11 @@
+# Post-processing hooks (Phase 10). Вызываются после «Очистить» в режиме
+# «Транскрипт». Ошибка хука не роняет пайплайн — событие hook-error в UI.
+yandex_messenger:
+  enabled: false
+  presets: [] # пусто = все пресеты
+  target:
+    chat_id: ""
+    bot_token: ""
+    webhook_url: ""
+  format: text
+  options: {}

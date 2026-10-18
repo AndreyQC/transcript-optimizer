@@ -3,6 +3,7 @@ use tauri::ipc::Channel;
 use tauri_plugin_http::reqwest;
 
 mod crypto;
+mod hooks;
 mod transcribe;
 
 // Один чанк SSE-стрима, прокидываемый во фронтенд через Channel.
@@ -113,7 +114,8 @@ pub fn run() {
             stream_chat,
             transcribe::run_transcription,
             transcribe::transcribe_cancel,
-            transcribe::detect_aivo_model_dir
+            transcribe::detect_aivo_model_dir,
+            hooks::run_post_hooks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

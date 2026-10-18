@@ -12,6 +12,7 @@ import {
   type AddEntryInput,
 } from "../lib/yaml-edit";
 import { findSimilar } from "../lib/similarity";
+import { AgentProposals } from "./AgentProposals";
 import {
   SimilarFromPanel,
   buildFromPool,
@@ -268,6 +269,13 @@ export function EditPanel() {
 
   return (
     <aside className="edit-panel">
+      <AgentProposals
+        busy={!!pending}
+        onApply={(before, after) => {
+          setPendingBefore(before);
+          setPending(after);
+        }}
+      />
       <div className="edit-panel-header">
         <h3>Правка словаря</h3>
         {activeKind === "replacements" && (

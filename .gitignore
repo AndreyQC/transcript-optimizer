@@ -8,3 +8,4 @@ sample/transcript_optimizer/*.txt
 sample/transcript_optimizer/GLOSSARY.md
 sample/transcript_optimizer/stats-export.md
 
+/target

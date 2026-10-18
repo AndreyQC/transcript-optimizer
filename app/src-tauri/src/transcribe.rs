@@ -106,3 +106,30 @@ pub fn transcribe_cancel() -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Найти каталог моделей установленного AivoRelay (Store-версия хранит их в
+/// %LOCALAPPDATA%\Packages\MaxITService.AivoRelay_*\...\models). Возвращаем
+/// путь к каталогу models, из которого UI подставляет подкаталог конкретной
+/// модели; None — AivoRelay не найден.
+#[tauri::command]
+pub fn detect_aivo_model_dir() -> Option<String> {
+    let local = std::env::var("LOCALAPPDATA").ok()?;
+    let packages = std::path::Path::new(&local).join("Packages");
+    let entries = std::fs::read_dir(&packages).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.to_lowercase().contains("aivorelay") {
+            continue;
+        }
+        let models = entry
+            .path()
+            .join("LocalCache")
+            .join("Roaming")
+            .join("fi.maxits.aivorelay")
+            .join("models");
+        if models.is_dir() {
+            return Some(models.to_string_lossy().into_owned());
+        }
+    }
+    None
+}

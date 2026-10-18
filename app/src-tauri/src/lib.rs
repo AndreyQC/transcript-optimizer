@@ -112,7 +112,8 @@ pub fn run() {
             resolve_crypto_token,
             stream_chat,
             transcribe::run_transcription,
-            transcribe::transcribe_cancel
+            transcribe::transcribe_cancel,
+            transcribe::detect_aivo_model_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

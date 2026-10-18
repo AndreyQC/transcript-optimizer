@@ -1,0 +1,5 @@
+[workspace]
+resolver = "2"
+members = ["app/src-tauri", "pipeline"]
+# spike/transcriber намеренно вне workspace: у него свой [workspace]
+# (одноразовый код, тяжёлые ML-депы не должны влиять на сборку приложения).

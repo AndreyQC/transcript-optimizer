@@ -1,0 +1,27 @@
+[package]
+name = "pipeline"
+version = "0.1.0"
+edition = "2021"
+description = "Sidecar-пайплайн транскрибации: decode -> ASR -> diarization -> merge"
+
+[lib]
+name = "pipeline"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pipeline"
+path = "src/main.rs"
+
+[dependencies]
+transcribe-rs = { version = "0.3", features = ["onnx"] }
+# transcribe-rs 0.3.12 объявляет ort "2.0.0-rc.12" диапазоном, но в rc.14
+# у ort сломан API Session::builder — пинтуем точно (см. спайк 20261018_002 §4.1).
+ort = "=2.0.0-rc.12"
+polyvoice = { version = "1.0", features = ["pipeline-native", "vbx"] }
+hound = "3"
+symphonia = { version = "0.5", features = ["all"] }
+audiopus = "0.2"
+rubato = "0.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
